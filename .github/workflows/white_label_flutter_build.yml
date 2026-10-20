@@ -1,0 +1,92 @@
+name: Multi-Tenant Customer White-Label Storefront Flutter Build
+
+on:
+  repository_dispatch:
+    types: [generate_merchant_app]
+  workflow_dispatch:
+    inputs:
+      store_domain:
+        description: 'Merchant Store Domain'
+        required: true
+        default: 'nextlook.shop.xylotechsolution.com'
+      app_name:
+        description: 'Branded Store App Name'
+        required: true
+        default: 'Nextlook Store'
+      primary_color:
+        description: 'Primary Brand Hex Color'
+        required: true
+        default: '#059669'
+
+jobs:
+  build_android_apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      - name: Initialize Android & Dependencies
+        run: |
+          flutter config --enable-android
+          flutter create . --project-name xylo_customer_storefront --org com.xylosaas
+          flutter pub get
+      - name: Build Signed White-Label Android APK
+        run: |
+          DOMAIN="${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'nextlook.shop.xylotechsolution.com' }}"
+          SUB="${{ github.event.client_payload.subdomain || 'nextlook' }}"
+          NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'Nextlook Store' }}"
+          COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
+          SCOLOR="${{ github.event.client_payload.secondary_color || '#047857' }}"
+          BUNDLE="${{ github.event.client_payload.bundle_id || 'com.xylosaas.store' }}"
+          flutter build apk --release             --dart-define=STORE_DOMAIN=$DOMAIN             --dart-define=TENANT_SUBDOMAIN=$SUB             --dart-define=APP_NAME="$NAME"             --dart-define=PRIMARY_COLOR="$COLOR"             --dart-define=SECONDARY_COLOR="$SCOLOR"             --dart-define=BUNDLE_ID=$BUNDLE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storefront-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build_windows_exe:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      - name: Initialize Windows & Dependencies
+        run: |
+          flutter config --enable-windows-desktop
+          flutter create . --platforms=windows --project-name xylo_customer_storefront
+          flutter pub get
+      - name: Build Windows Storefront Executable (.exe)
+        run: |
+          DOMAIN="${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'nextlook.shop.xylotechsolution.com' }}"
+          SUB="${{ github.event.client_payload.subdomain || 'nextlook' }}"
+          NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'Nextlook Store' }}"
+          COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
+          flutter build windows --release             --dart-define=STORE_DOMAIN=$DOMAIN             --dart-define=TENANT_SUBDOMAIN=$SUB             --dart-define=APP_NAME="$NAME"             --dart-define=PRIMARY_COLOR="$COLOR"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: storefront-windows-exe
+          path: build/windows/x64/runner/Release/
+
+  build_apple_ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      - name: Initialize iOS & Dependencies
+        run: |
+          flutter create . --platforms=ios --project-name xylo_customer_storefront --org com.xylosaas
+          flutter pub get
+      - name: Build iOS White-Label IPA (No Codesign)
+        run: |
+          DOMAIN="${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'nextlook.shop.xylotechsolution.com' }}"
+          SUB="${{ github.event.client_payload.subdomain || 'nextlook' }}"
+          NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'Nextlook Store' }}"
+          COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
+          flutter build ios --release --no-codesign             --dart-define=STORE_DOMAIN=$DOMAIN             --dart-define=TENANT_SUBDOMAIN=$SUB             --dart-define=APP_NAME="$NAME"             --dart-define=PRIMARY_COLOR="$COLOR"
