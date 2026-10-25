@@ -1,22 +1,35 @@
 // lib/core/config/store_env_config.dart
-// Spec V2.4 Section 4: Zero-Knowledge Compile-Time White-Label Constants (--dart-define)
 import 'package:flutter/material.dart';
 
 class StoreEnvConfig {
   static const String compileTimeStoreDomain = String.fromEnvironment(
     'STORE_DOMAIN',
-    defaultValue: 'nextlook.localhost:8000',
+    defaultValue: 'nextlook.shop.xylotechsolution.com',
   );
 
-  static const String compileTimeSubdomain = String.fromEnvironment(
-    'TENANT_SUBDOMAIN',
-    defaultValue: 'nextlook',
-  );
+  // 🌟 অটোমেটিক ডোমেইন থেকে সাবডোমেন আলাদা করবে (যেমন: bestbdbazar.shop... -> bestbdbazar)
+  static String get compileTimeSubdomain {
+    const explicit = String.fromEnvironment('TENANT_SUBDOMAIN');
+    if (explicit.isNotEmpty) return explicit;
 
-  static const String compileTimeAppName = String.fromEnvironment(
-    'APP_NAME',
-    defaultValue: 'Nextlook Store',
-  );
+    final domainWithoutPort = compileTimeStoreDomain.split(':').first.trim();
+    final parts = domainWithoutPort.split('.');
+    if (parts.isNotEmpty && parts.first.isNotEmpty) {
+      return parts.first;
+    }
+    return 'nextlook';
+  }
+
+  static String get compileTimeAppName {
+    const explicit = String.fromEnvironment('APP_NAME');
+    if (explicit.isNotEmpty) return explicit;
+
+    // সাবডোমেন অনুযায়ী টাইটেল তৈরি করবে
+    final sub = compileTimeSubdomain;
+    if (sub == 'bestbdbazar') return 'Best BD Bazar';
+    if (sub == 'nextlook') return 'Nextlook Store';
+    return '${sub[0].toUpperCase()}${sub.substring(1)} Store';
+  }
 
   static const String compileTimePrimaryColor = String.fromEnvironment(
     'PRIMARY_COLOR',
@@ -28,12 +41,8 @@ class StoreEnvConfig {
     defaultValue: '#047857',
   );
 
-  static const String compileTimeBundleId = String.fromEnvironment(
-    'BUNDLE_ID',
-    defaultValue: 'com.xylosaas.nextlook',
-  );
-
-  static Color parseHex(String? hex, {Color fallback = const Color(0xFF059669)}) {
+  static Color parseHex(String? hex,
+      {Color fallback = const Color(0xFF059669)}) {
     if (hex == null || hex.trim().isEmpty) return fallback;
     String clean = hex.trim().replaceAll('#', '');
     if (clean.length == 6) clean = 'FF$clean';

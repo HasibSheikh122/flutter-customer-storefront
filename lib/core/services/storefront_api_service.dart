@@ -10,28 +10,37 @@ class StorefrontApiService {
         'Accept': 'application/json',
         'X-Tenant-Domain': StoreEnvConfig.compileTimeStoreDomain,
         'X-Tenant-Subdomain': StoreEnvConfig.compileTimeSubdomain,
+        'X-Subdomain': StoreEnvConfig.compileTimeSubdomain,
       };
 
   static Future<Map<String, dynamic>> fetchHomeData() async {
     final String base = StoreEnvConfig.resolvedBaseUrl;
     final String sub = StoreEnvConfig.compileTimeSubdomain;
     final Uri uri = Uri.parse('$base/api/v1/stores/home-data/?subdomain=$sub');
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+
+    final res = await http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 12));
     if (res.statusCode == 200) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
     return {};
   }
 
-  static Future<List<StoreProduct>> fetchProducts({String? categorySlug, String? search}) async {
+  static Future<List<StoreProduct>> fetchProducts(
+      {String? categorySlug, String? search}) async {
     final String base = StoreEnvConfig.resolvedBaseUrl;
     final String sub = StoreEnvConfig.compileTimeSubdomain;
     final Map<String, String> query = {'subdomain': sub};
-    if (categorySlug != null && categorySlug.isNotEmpty) query['category'] = categorySlug;
+    if (categorySlug != null && categorySlug.isNotEmpty)
+      query['category'] = categorySlug;
     if (search != null && search.isNotEmpty) query['search'] = search;
 
-    final Uri uri = Uri.parse('$base/api/v1/products/').replace(queryParameters: query);
-    final res = await http.get(uri, headers: _headers).timeout(const Duration(seconds: 12));
+    final Uri uri =
+        Uri.parse('$base/api/v1/products/').replace(queryParameters: query);
+    final res = await http
+        .get(uri, headers: _headers)
+        .timeout(const Duration(seconds: 12));
     if (res.statusCode == 200) {
       final decoded = jsonDecode(res.body);
       List<dynamic> list = [];
@@ -40,7 +49,9 @@ class StorefrontApiService {
       } else if (decoded is Map && decoded['results'] is List) {
         list = decoded['results'] as List<dynamic>;
       }
-      return list.map((e) => StoreProduct.fromJson(e as Map<String, dynamic>)).toList();
+      return list
+          .map((e) => StoreProduct.fromJson(e as Map<String, dynamic>))
+          .toList();
     }
     return [];
   }
@@ -56,7 +67,8 @@ class StorefrontApiService {
     final String sub = StoreEnvConfig.compileTimeSubdomain;
     final Uri uri = Uri.parse('$base/api/v1/orders/?subdomain=$sub');
 
-    final double total = items.fold(0, (sum, i) => sum + (i.product.price * i.quantity));
+    final double total =
+        items.fold(0, (sum, i) => sum + (i.product.price * i.quantity));
     final payload = {
       'subdomain': sub,
       'customer_name': customerName.trim(),
@@ -78,7 +90,8 @@ class StorefrontApiService {
           .toList(),
     };
 
-    final res = await http.post(uri, headers: _headers, body: jsonEncode(payload));
+    final res =
+        await http.post(uri, headers: _headers, body: jsonEncode(payload));
     if (res.statusCode == 200 || res.statusCode == 201) {
       return jsonDecode(res.body) as Map<String, dynamic>;
     }
