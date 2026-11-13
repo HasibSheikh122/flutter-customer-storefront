@@ -1,131 +1,269 @@
 // lib/providers/store_provider.dart
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../core/config/store_env_config.dart';
 import '../core/services/storefront_api_service.dart';
 import '../models/store_models.dart';
 
 class StoreProvider extends ChangeNotifier {
-  bool isLoading = false;
-  String storeName = StoreEnvConfig.compileTimeAppName;
-  String announcementText = 'Sign up and GET 20% OFF on your first order!';
-  Color primaryColor =
-      StoreEnvConfig.parseHex(StoreEnvConfig.compileTimePrimaryColor);
-  Color secondaryColor =
-      StoreEnvConfig.parseHex(StoreEnvConfig.compileTimeSecondaryColor);
+  final StorefrontApiService _api = StorefrontApiService();
 
-  List<StoreBanner> heroBanners = [];
+  bool isLoading = true;
+  String storeName = StoreEnvConfig.appName;
+  String announcementText = StoreEnvConfig.appSlogan;
+  String storeLogoUrl = StoreEnvConfig.appIconUrl;
+  Color primaryColor = StoreEnvConfig.primaryColor;
+  Color secondaryColor = StoreEnvConfig.secondaryColor;
+
   List<StoreCategory> categories = [];
   List<StoreProduct> products = [];
-  String? selectedCategorySlug;
-
+  List<StoreBannerItem> heroBanners = [];
   List<CartItem> cart = [];
-  List<CartItem> get cartItems => cart;
-  set cartItems(List<CartItem> items) => cart = items;
 
-  int get cartCount => cart.fold(0, (sum, item) => sum + item.quantity);
-  double get cartTotal =>
-      cart.fold(0.0, (sum, item) => sum + (item.product.price * item.quantity));
+  String? selectedCategorySlug;
+  String searchQuery = '';
+
+  StoreProvider() {
+    initializeStore();
+  }
 
   Future<void> initializeStore() async {
     isLoading = true;
     notifyListeners();
+
+    await _loadSavedCart();
+
     try {
-      final homeData = await StorefrontApiService.fetchHomeData();
+      final homeData = await _api.fetchHomeData();
       if (homeData.isNotEmpty) {
-        if (homeData['store_name'] != null) {
-          storeName = homeData['store_name'];
+        final Map settingsMap = (homeData['settings'] is Map)
+            ? Map.from(homeData['settings'] as Map)
+            : {};
+        final Map appDistMap = (homeData['app_distribution'] is Map)
+            ? Map.from(homeData['app_distribution'] as Map)
+            : {};
+
+        final String resolvedName = (appDistMap['app_name'] ??
+                settingsMap['store_name'] ??
+                homeData['store_name'] ??
+                '')
+            .toString()
+            .trim();
+        if (resolvedName.isNotEmpty) {
+          storeName = resolvedName;
         }
-        if (homeData['primary_color'] != null) {
-          primaryColor = StoreEnvConfig.parseHex(homeData['primary_color'],
-              fallback: primaryColor);
+
+        final String resolvedAnnouncement = (settingsMap['announcement_text'] ??
+                appDistMap['app_slogan'] ??
+                homeData['announcement_text'] ??
+                '')
+            .toString()
+            .trim();
+        if (resolvedAnnouncement.isNotEmpty) {
+          announcementText = resolvedAnnouncement;
         }
-        if (homeData['secondary_color'] != null) {
-          secondaryColor = StoreEnvConfig.parseHex(homeData['secondary_color'],
-              fallback: secondaryColor);
+
+        final String resolvedIcon = (appDistMap['app_icon_url'] ??
+                settingsMap['store_logo'] ??
+                settingsMap['logo'] ??
+                homeData['store_logo'] ??
+                '')
+            .toString()
+            .trim();
+        if (resolvedIcon.isNotEmpty) {
+          storeLogoUrl = resolvedIcon;
         }
-        if (homeData['announcement'] != null) {
-          announcementText = homeData['announcement'];
+
+        final String resolvedPrimary = (appDistMap['primary_color'] ??
+                settingsMap['primary_color'] ??
+                homeData['primary_color'] ??
+                '')
+            .toString()
+            .trim();
+        if (resolvedPrimary.isNotEmpty) {
+          primaryColor = StoreEnvConfig.hexToColor(
+            resolvedPrimary,
+            fallback: primaryColor,
+          );
         }
+
+        final String resolvedSecondary = (appDistMap['secondary_color'] ??
+                settingsMap['secondary_color'] ??
+                homeData['secondary_color'] ??
+                '')
+            .toString()
+            .trim();
+        if (resolvedSecondary.isNotEmpty) {
+          secondaryColor = StoreEnvConfig.hexToColor(
+            resolvedSecondary,
+            fallback: secondaryColor,
+          );
+        }
+
         if (homeData['categories'] is List) {
           categories = (homeData['categories'] as List)
-              .map((e) => StoreCategory.fromJson(e as Map<String, dynamic>))
+              .whereType()
+              .map((e) => StoreCategory.fromJson(Map<String, dynamic>.from(e)))
               .toList();
         }
 
-        // 🌟 Backend theke hero banner load kora
-        if (homeData['banners'] is Map && homeData['banners']['hero'] is List) {
-          heroBanners = (homeData['banners']['hero'] as List)
-              .map((e) => StoreBanner.fromJson(e as Map<String, dynamic>))
+        final rawBanners = homeData['hero_banners'] ??
+            (homeData['banners'] is Map
+                ? homeData['banners']['hero']
+                : homeData['banners']);
+        if (rawBanners is List) {
+          heroBanners = rawBanners
+              .whereType()
+              .map((e) => StoreBannerItem.fromJson(Map<String, dynamic>.from(e)))
+              .where((b) => b.imageUrl.isNotEmpty)
               .toList();
         }
       }
-      products = await StorefrontApiService.fetchProducts();
-    } catch (e) {
-      debugPrint('Initialize store error: $e');
-    } finally {
-      isLoading = false;
-      notifyListeners();
+
+      if (categories.isEmpty) {
+        final rawCats = await _api.fetchCategories();
+        categories = rawCats
+            .whereType()
+            .map((e) => StoreCategory.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+      }
+
+      await loadProducts();
+    } catch (_) {
+      // Keep compile-time merchant branding defaults
     }
+
+    isLoading = false;
+    notifyListeners();
   }
 
-  Future<void> filterByCategory(String? slug) async {
+  Future<void> loadProducts() async {
+    final rawProducts = await _api.fetchProducts(
+      categorySlug: selectedCategorySlug,
+      search: searchQuery,
+    );
+    products = rawProducts
+        .whereType()
+        .map((e) => StoreProduct.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    notifyListeners();
+  }
+
+  void filterByCategory(String? slug) {
     selectedCategorySlug = slug;
-    isLoading = true;
-    notifyListeners();
-    try {
-      products = await StorefrontApiService.fetchProducts(categorySlug: slug);
-    } catch (e) {
-      debugPrint('Filter error: $e');
-    } finally {
-      isLoading = false;
-      notifyListeners();
-    }
+    loadProducts();
   }
 
-  Future<void> searchProducts(String query) async {
-    selectedCategorySlug = null;
-    isLoading = true;
-    notifyListeners();
-    try {
-      products = await StorefrontApiService.fetchProducts(search: query);
-    } catch (e) {
-      debugPrint('Search error: $e');
-    } finally {
-      isLoading = false;
-      notifyListeners();
-    }
+  void searchProducts(String query) {
+    searchQuery = query;
+    loadProducts();
   }
 
   void addToCart(StoreProduct product) {
-    final index = cart.indexWhere((i) => i.product.id == product.id);
-    if (index >= 0) {
-      cart[index].quantity += 1;
+    final idx = cart.indexWhere((c) => c.product.id == product.id);
+    if (idx >= 0) {
+      cart[idx].quantity += 1;
     } else {
       cart.add(CartItem(product: product, quantity: 1));
     }
+    _saveCart();
     notifyListeners();
   }
 
-  void updateQuantity(dynamic productId, int delta) {
-    final index = cart.indexWhere((i) => i.product.id == productId);
-    if (index >= 0) {
-      final newQty = cart[index].quantity + delta;
-      if (newQty <= 0) {
-        cart.removeAt(index);
+  void updateQuantity(int productId, int qty) {
+    final idx = cart.indexWhere((c) => c.product.id == productId);
+    if (idx >= 0) {
+      if (qty <= 0) {
+        cart.removeAt(idx);
       } else {
-        cart[index].quantity = newQty;
+        cart[idx].quantity = qty;
       }
+      _saveCart();
       notifyListeners();
     }
-  }
-
-  void removeFromCart(StoreProduct product) {
-    cart.removeWhere((i) => i.product.id == product.id);
-    notifyListeners();
   }
 
   void clearCart() {
     cart.clear();
+    _saveCart();
     notifyListeners();
+  }
+
+  int get cartCount => cart.fold(0, (sum, item) => sum + item.quantity);
+  double get cartSubtotal => cart.fold(0.0, (sum, item) => sum + item.lineTotal);
+
+  Future<void> _loadSavedCart() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString('cart_${StoreEnvConfig.resolvedSubdomain}');
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(raw) as List;
+        cart = decoded
+            .whereType()
+            .map((item) => CartItem(
+                  product: StoreProduct.fromJson(
+                      Map<String, dynamic>.from(item['product'])),
+                  quantity: item['quantity'] ?? 1,
+                ))
+            .toList();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveCart() async {
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(cart
+        .map((c) => {
+              'quantity': c.quantity,
+              'product': {
+                'id': c.product.id,
+                'name': c.product.name,
+                'slug': c.product.slug,
+                'price': c.product.price,
+                'compare_price': c.product.comparePrice,
+                'primary_image': c.product.imageUrl,
+                'category_name': c.product.categoryName,
+                'stock_quantity': c.product.stockQuantity,
+                'unit': c.product.unit,
+              }
+            })
+        .toList());
+    await prefs.setString('cart_${StoreEnvConfig.resolvedSubdomain}', encoded);
+  }
+
+  Future> checkoutOrder({
+    required String customerName,
+    required String customerPhone,
+    required String shippingAddress,
+    required String city,
+    String paymentMethod = 'cod',
+  }) async {
+    final payload = {
+      'customer_name': customerName,
+      'customer_phone': customerPhone,
+      'shipping_address': {
+        'fullName': customerName,
+        'phone': customerPhone,
+        'address': shippingAddress,
+        'city': city,
+      },
+      'payment_method': paymentMethod,
+      'total': cartSubtotal,
+      'items': cart
+          .map((c) => {
+                'product_id': c.product.id,
+                'product_name': c.product.name,
+                'quantity': c.quantity,
+                'price': c.product.price,
+              })
+          .toList(),
+    };
+
+    final result = await _api.submitOrder(payload);
+    if (result['success'] == true) {
+      clearCart();
+    }
+    return result;
   }
 }

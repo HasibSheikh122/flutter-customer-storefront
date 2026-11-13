@@ -81,24 +81,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     }
 
     return [
-      StoreCategory(name: 'Bags & Wallets', slug: 'bags-wallets', icon: '👜'),
-      StoreCategory(
-          name: 'Beauty & Personal Care',
-          slug: 'beauty-personal-care',
-          icon: '💄'),
-      StoreCategory(name: 'Computer', slug: 'computer', icon: '🖥️'),
-      StoreCategory(
-          name: 'Foods And Healthy', slug: 'foods-and-healthy', icon: '🍱'),
       StoreCategory(name: 'General', slug: 'general', icon: '📦'),
-      StoreCategory(
-          name: 'Jewelry & Accessories',
-          slug: 'jewelry-accessories',
-          icon: '💍'),
-      StoreCategory(name: 'Kids', slug: 'kids', icon: '🧸'),
-      StoreCategory(name: "Men's Fashions", slug: 'mens-fashions', icon: '👔'),
-      StoreCategory(name: "Men's Clothing", slug: 'mens-clothing', icon: '👕'),
-      StoreCategory(name: 'Monitors', slug: 'monitors', icon: '🖥️'),
-      StoreCategory(name: 'Vegetable', slug: 'vegetable', icon: '🥦'),
     ];
   }
 
@@ -129,21 +112,54 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       appBar: AppBar(
         backgroundColor: store.primaryColor,
         foregroundColor: Colors.white,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+        title: Row(
           children: [
-            Text(
-              store.storeName,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
-            ),
-            Text(
-              store.announcementText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: Colors.white70),
+            if (store.storeLogoUrl.trim().isNotEmpty) ...[
+              Container(
+                width: 34,
+                height: 34,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    store.storeLogoUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.storefront_rounded,
+                      size: 20,
+                      color: store.primaryColor,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    store.storeName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                  Text(
+                    store.announcementText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 10, color: Colors.white70),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -235,19 +251,15 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
         children: [
-          // Jodi kono category select kora na thake tobe Hero Banner o Bento Categories dekhabe
           if (activeCategory == null) ...[
             const HeroBannerWidget(),
             const SizedBox(height: 22),
             _buildBentoCategorySection(store, categories),
             const SizedBox(height: 24),
           ] else ...[
-            // 🌟 Category Click korle Video-er moto Category Header Banner dekhabe
             _buildSelectedCategoryBanner(store, activeCategory),
             const SizedBox(height: 20),
           ],
-
-          // 🌟 PRODUCTS SECTION HEADER
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -291,8 +303,6 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
             ],
           ),
           const SizedBox(height: 14),
-
-          // 🌟 HEXAGON PRODUCTS GRID
           if (store.isLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 60),
@@ -302,7 +312,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 60),
               child: Center(
-                  child: Text('এই ক্যাটাগরিতে কোনো প্রোডাক্ট পাওয়া যায়নি।')),
+                  child: Text('এই স্টোরে বর্তমানে কোনো প্রোডাক্ট পাওয়া যায়নি।')),
             )
           else
             GridView.builder(
@@ -313,8 +323,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                 crossAxisCount: MediaQuery.of(context).size.width > 700 ? 4 : 2,
                 mainAxisSpacing: 14,
                 crossAxisSpacing: 12,
-                childAspectRatio:
-                    0.56, // Hexagon card design-er jonno perfect ratio
+                childAspectRatio: 0.56,
               ),
               itemBuilder: (context, idx) {
                 final product = store.products[idx];
@@ -322,7 +331,6 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                   index: idx,
                   product: product,
                   primaryColor: store.primaryColor,
-                  // 🌟 Product-e click korle Product Details Page-e jabe
                   onTap: () {
                     Navigator.push(
                       context,
@@ -352,7 +360,6 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     );
   }
 
-  // 🌟 Category select korle upore green/brand card header
   Widget _buildSelectedCategoryBanner(
       StoreProvider store, StoreCategory category) {
     return Container(
@@ -694,9 +701,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                       ),
                     ],
                   ),
-                ),
-              );
-            },
+                );
+              },
+            ),
           ),
         ),
       ],

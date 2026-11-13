@@ -2,62 +2,85 @@
 import 'package:flutter/material.dart';
 
 class StoreEnvConfig {
-  static const String compileTimeStoreDomain = String.fromEnvironment(
+  static const String storeDomain = String.fromEnvironment(
     'STORE_DOMAIN',
-    defaultValue: 'nextlook.shop.xylotechsolution.com',
+    defaultValue: 'buynarabd.shop.xylotechsolution.com',
   );
 
-  // 🌟 অটোমেটিক ডোমেইন থেকে সাবডোমেন আলাদা করবে (যেমন: bestbdbazar.shop... -> bestbdbazar)
-  static String get compileTimeSubdomain {
-    const explicit = String.fromEnvironment('TENANT_SUBDOMAIN');
-    if (explicit.isNotEmpty) return explicit;
+  static const String tenantSubdomain = String.fromEnvironment(
+    'TENANT_SUBDOMAIN',
+    defaultValue: 'buynarabd',
+  );
 
-    final domainWithoutPort = compileTimeStoreDomain.split(':').first.trim();
-    final parts = domainWithoutPort.split('.');
-    if (parts.isNotEmpty && parts.first.isNotEmpty) {
-      return parts.first;
-    }
-    return 'nextlook';
-  }
+  static const String appName = String.fromEnvironment(
+    'APP_NAME',
+    defaultValue: 'Buynara',
+  );
 
-  static String get compileTimeAppName {
-    const explicit = String.fromEnvironment('APP_NAME');
-    if (explicit.isNotEmpty) return explicit;
+  static const String appSlogan = String.fromEnvironment(
+    'APP_SLOGAN',
+    defaultValue: 'Authentic Online Shopping',
+  );
 
-    // সাবডোমেন অনুযায়ী টাইটেল তৈরি করবে
-    final sub = compileTimeSubdomain;
-    if (sub == 'bestbdbazar') return 'Best BD Bazar';
-    if (sub == 'nextlook') return 'Nextlook Store';
-    return '${sub[0].toUpperCase()}${sub.substring(1)} Store';
-  }
+  static const String appIconUrl = String.fromEnvironment(
+    'APP_ICON_URL',
+    defaultValue: '',
+  );
 
-  static const String compileTimePrimaryColor = String.fromEnvironment(
+  static const String primaryColorHex = String.fromEnvironment(
     'PRIMARY_COLOR',
-    defaultValue: '#059669',
+    defaultValue: '#940558',
   );
 
-  static const String compileTimeSecondaryColor = String.fromEnvironment(
+  static const String secondaryColorHex = String.fromEnvironment(
     'SECONDARY_COLOR',
-    defaultValue: '#047857',
+    defaultValue: '#071fda',
   );
 
-  static Color parseHex(String? hex,
-      {Color fallback = const Color(0xFF059669)}) {
-    if (hex == null || hex.trim().isEmpty) return fallback;
-    String clean = hex.trim().replaceAll('#', '');
+  static const String bundleId = String.fromEnvironment(
+    'BUNDLE_ID',
+    defaultValue: 'com.xylosaas.buynara',
+  );
+
+  static String get cleanHost {
+    String h = storeDomain.trim().toLowerCase();
+    h = h.replaceAll('https://', '').replaceAll('http://', '');
+    if (h.contains('/')) h = h.split('/').first;
+    return h;
+  }
+
+  static String get resolvedSubdomain {
+    if (tenantSubdomain.trim().isNotEmpty) {
+      return tenantSubdomain.trim().toLowerCase();
+    }
+    final host = cleanHost;
+    if (host.contains('.')) {
+      final first = host.split('.').first;
+      if (first != 'www' && first != 'shop' && first != 'api') {
+        return first;
+      }
+    }
+    return 'buynarabd';
+  }
+
+  static String get apiBaseUrl {
+    final h = cleanHost;
+    if (h.startsWith('localhost') ||
+        h.startsWith('127.0.0.1') ||
+        h.startsWith('10.0.2.2')) {
+      return 'http://$h';
+    }
+    return 'https://$h';
+  }
+
+  static Color hexToColor(String hex, {Color fallback = const Color(0xFF059669)}) {
+    String clean = hex.replaceAll('#', '').trim();
     if (clean.length == 6) clean = 'FF$clean';
     final int? val = int.tryParse(clean, radix: 16);
     return val != null ? Color(val) : fallback;
   }
 
-  static String get resolvedBaseUrl {
-    String raw = compileTimeStoreDomain.trim();
-    if (!raw.startsWith('http://') && !raw.startsWith('https://')) {
-      final bool isLocal = raw.contains('localhost') ||
-          raw.startsWith('127.0.0.1') ||
-          raw.startsWith('10.0.2.2');
-      raw = '${isLocal ? "http" : "https"}://$raw';
-    }
-    return raw.endsWith('/') ? raw.substring(0, raw.length - 1) : raw;
-  }
+  static Color get primaryColor => hexToColor(primaryColorHex);
+  static Color get secondaryColor =>
+      hexToColor(secondaryColorHex, fallback: const Color(0xFF047857));
 }
