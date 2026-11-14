@@ -103,8 +103,8 @@ class StoreProvider extends ChangeNotifier {
 
         if (homeData['categories'] is List) {
           categories = (homeData['categories'] as List)
-              .whereType()
-              .map((e) => StoreCategory.fromJson(Map<String, dynamic>.from(e)))
+              .where((e) => e is Map)
+              .map((e) => StoreCategory.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList();
         }
 
@@ -114,8 +114,8 @@ class StoreProvider extends ChangeNotifier {
                 : homeData['banners']);
         if (rawBanners is List) {
           heroBanners = rawBanners
-              .whereType()
-              .map((e) => StoreBanner.fromJson(Map<String, dynamic>.from(e)))
+              .where((e) => e is Map)
+              .map((e) => StoreBanner.fromJson(Map<String, dynamic>.from(e as Map)))
               .toList();
         }
       }
@@ -128,9 +128,7 @@ class StoreProvider extends ChangeNotifier {
       }
 
       await loadProducts();
-    } catch (_) {
-      // Keep compile-time merchant branding defaults
-    }
+    } catch (_) {}
 
     isLoading = false;
     notifyListeners();
@@ -201,10 +199,10 @@ class StoreProvider extends ChangeNotifier {
       try {
         final decoded = jsonDecode(raw) as List;
         cart = decoded
-            .whereType()
+            .where((item) => item is Map)
             .map((item) => CartItem(
                   product: StoreProduct.fromJson(
-                      Map<String, dynamic>.from(item['product'] as Map)),
+                      Map<String, dynamic>.from((item as Map)['product'] as Map)),
                   quantity: (item['quantity'] is int)
                       ? item['quantity'] as int
                       : int.tryParse(item['quantity'].toString()) ?? 1,
@@ -235,14 +233,14 @@ class StoreProvider extends ChangeNotifier {
     await prefs.setString('cart_${StoreEnvConfig.resolvedSubdomain}', encoded);
   }
 
-  Future> checkoutOrder({
+  Future<Map<String, dynamic>> checkoutOrder({
     required String customerName,
     required String customerPhone,
     required String shippingAddress,
     required String city,
     String paymentMethod = 'cod',
   }) async {
-    final payload = {
+    final payload = <String, dynamic>{
       'customer_name': customerName,
       'customer_phone': customerPhone,
       'shipping_address': {

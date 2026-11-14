@@ -14,12 +14,12 @@ class StoreEnvConfig {
 
   static const String appName = String.fromEnvironment(
     'APP_NAME',
-    defaultValue: 'BestBdBazar',
+    defaultValue: "BestBdBazar",
   );
 
   static const String appSlogan = String.fromEnvironment(
     'APP_SLOGAN',
-    defaultValue: 'Authentic Online Shopping',
+    defaultValue: "Authentic Online Shopping",
   );
 
   static const String appIconUrl = String.fromEnvironment(
@@ -29,12 +29,12 @@ class StoreEnvConfig {
 
   static const String primaryColorHex = String.fromEnvironment(
     'PRIMARY_COLOR',
-    defaultValue: '#EA580C',
+    defaultValue: '#015b01',
   );
 
   static const String secondaryColorHex = String.fromEnvironment(
     'SECONDARY_COLOR',
-    defaultValue: '#C2410C',
+    defaultValue: '#940000',
   );
 
   static const String bundleId = String.fromEnvironment(
@@ -42,7 +42,6 @@ class StoreEnvConfig {
     defaultValue: 'com.xylosaas.bestbdbazar.store',
   );
 
-  // Backwards-compatible aliases
   static const String compileTimeStoreDomain = storeDomain;
   static const String compileTimeSubdomain = tenantSubdomain;
   static String get resolvedBaseUrl => apiBaseUrl;

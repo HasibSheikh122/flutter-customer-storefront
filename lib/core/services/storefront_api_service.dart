@@ -13,7 +13,7 @@ class StorefrontApiService {
         'X-Subdomain': StoreEnvConfig.resolvedSubdomain,
       };
 
-  Future> fetchHomeData() async {
+  Future<Map<String, dynamic>> fetchHomeData() async {
     final String base = StoreEnvConfig.apiBaseUrl;
     final String sub = StoreEnvConfig.resolvedSubdomain;
     final Uri uri = Uri.parse('$base/api/v1/stores/home-data/?subdomain=$sub');
@@ -30,7 +30,7 @@ class StorefrontApiService {
     return {};
   }
 
-  Future<List>> fetchCategories() async {
+  Future<List<Map<String, dynamic>>> fetchCategories() async {
     final String base = StoreEnvConfig.apiBaseUrl;
     final String sub = StoreEnvConfig.resolvedSubdomain;
     final Uri uri = Uri.parse('$base/api/v1/products/categories/?subdomain=$sub');
@@ -41,28 +41,28 @@ class StorefrontApiService {
           .timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        List<dynamic> list = [];
+        List list = [];
         if (decoded is List) {
           list = decoded;
         } else if (decoded is Map && decoded['results'] is List) {
-          list = decoded['results'] as List<dynamic>;
+          list = decoded['results'] as List;
         }
         return list
-            .whereType()
-            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => e is Map)
+            .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       }
     } catch (_) {}
     return [];
   }
 
-  Future<List>> fetchProducts({
+  Future<List<Map<String, dynamic>>> fetchProducts({
     String? categorySlug,
     String? search,
   }) async {
     final String base = StoreEnvConfig.apiBaseUrl;
     final String sub = StoreEnvConfig.resolvedSubdomain;
-    final Map<String, String> query = {'subdomain': sub};
+    final query = <String, String>{'subdomain': sub};
     if (categorySlug != null && categorySlug.isNotEmpty) {
       query['category'] = categorySlug;
     }
@@ -78,27 +78,27 @@ class StorefrontApiService {
           .timeout(const Duration(seconds: 12));
       if (res.statusCode == 200) {
         final decoded = jsonDecode(res.body);
-        List<dynamic> list = [];
+        List list = [];
         if (decoded is List) {
           list = decoded;
         } else if (decoded is Map && decoded['results'] is List) {
-          list = decoded['results'] as List<dynamic>;
+          list = decoded['results'] as List;
         }
         return list
-            .whereType()
-            .map((e) => Map<String, dynamic>.from(e))
+            .where((e) => e is Map)
+            .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
       }
     } catch (_) {}
     return [];
   }
 
-  Future> submitOrder(Map<String, dynamic> payload) async {
+  Future<Map<String, dynamic>> submitOrder(Map<String, dynamic> payload) async {
     final String base = StoreEnvConfig.apiBaseUrl;
     final String sub = StoreEnvConfig.resolvedSubdomain;
     final Uri uri = Uri.parse('$base/api/v1/orders/?subdomain=$sub');
 
-    final Map<String, dynamic> bodyPayload = {
+    final bodyPayload = <String, dynamic>{
       'subdomain': sub,
       ...payload,
     };
@@ -118,7 +118,7 @@ class StorefrontApiService {
     throw Exception('অর্ডার সম্পন্ন করা যায়নি (Status ${res.statusCode})');
   }
 
-  static Future> placeOrder({
+  static Future<Map<String, dynamic>> placeOrder({
     required String customerName,
     required String customerPhone,
     required String shippingAddress,
@@ -127,7 +127,7 @@ class StorefrontApiService {
   }) async {
     final double total =
         items.fold(0.0, (sum, i) => sum + (i.product.price * i.quantity));
-    final payload = {
+    final payload = <String, dynamic>{
       'customer_name': customerName.trim(),
       'customer_phone': customerPhone.trim(),
       'payment_method': paymentMethod,
