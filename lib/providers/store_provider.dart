@@ -18,7 +18,7 @@ class StoreProvider extends ChangeNotifier {
 
   List<StoreCategory> categories = [];
   List<StoreProduct> products = [];
-  List<StoreBannerItem> heroBanners = [];
+  List<StoreBanner> heroBanners = [];
   List<CartItem> cart = [];
 
   String? selectedCategorySlug;
@@ -115,8 +115,7 @@ class StoreProvider extends ChangeNotifier {
         if (rawBanners is List) {
           heroBanners = rawBanners
               .whereType()
-              .map((e) => StoreBannerItem.fromJson(Map<String, dynamic>.from(e)))
-              .where((b) => b.imageUrl.isNotEmpty)
+              .map((e) => StoreBanner.fromJson(Map<String, dynamic>.from(e)))
               .toList();
         }
       }
@@ -124,8 +123,7 @@ class StoreProvider extends ChangeNotifier {
       if (categories.isEmpty) {
         final rawCats = await _api.fetchCategories();
         categories = rawCats
-            .whereType()
-            .map((e) => StoreCategory.fromJson(Map<String, dynamic>.from(e)))
+            .map((e) => StoreCategory.fromJson(e))
             .toList();
       }
 
@@ -144,8 +142,7 @@ class StoreProvider extends ChangeNotifier {
       search: searchQuery,
     );
     products = rawProducts
-        .whereType()
-        .map((e) => StoreProduct.fromJson(Map<String, dynamic>.from(e)))
+        .map((e) => StoreProduct.fromJson(e))
         .toList();
     notifyListeners();
   }
@@ -171,13 +168,16 @@ class StoreProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void updateQuantity(int productId, int qty) {
+  void updateQuantity(dynamic productId, int deltaOrQty) {
     final idx = cart.indexWhere((c) => c.product.id == productId);
     if (idx >= 0) {
-      if (qty <= 0) {
+      final int nextQty = (deltaOrQty == 1 || deltaOrQty == -1)
+          ? (cart[idx].quantity + deltaOrQty)
+          : deltaOrQty;
+      if (nextQty <= 0) {
         cart.removeAt(idx);
       } else {
-        cart[idx].quantity = qty;
+        cart[idx].quantity = nextQty;
       }
       _saveCart();
       notifyListeners();
@@ -191,7 +191,8 @@ class StoreProvider extends ChangeNotifier {
   }
 
   int get cartCount => cart.fold(0, (sum, item) => sum + item.quantity);
-  double get cartSubtotal => cart.fold(0.0, (sum, item) => sum + item.lineTotal);
+  double get cartSubtotal => cart.fold(0.0, (sum, item) => sum + item.total);
+  double get cartTotal => cartSubtotal;
 
   Future<void> _loadSavedCart() async {
     final prefs = await SharedPreferences.getInstance();
@@ -203,8 +204,10 @@ class StoreProvider extends ChangeNotifier {
             .whereType()
             .map((item) => CartItem(
                   product: StoreProduct.fromJson(
-                      Map<String, dynamic>.from(item['product'])),
-                  quantity: item['quantity'] ?? 1,
+                      Map<String, dynamic>.from(item['product'] as Map)),
+                  quantity: (item['quantity'] is int)
+                      ? item['quantity'] as int
+                      : int.tryParse(item['quantity'].toString()) ?? 1,
                 ))
             .toList();
       } catch (_) {}
@@ -221,7 +224,7 @@ class StoreProvider extends ChangeNotifier {
                 'name': c.product.name,
                 'slug': c.product.slug,
                 'price': c.product.price,
-                'compare_price': c.product.comparePrice,
+                'regular_price': c.product.regularPrice,
                 'primary_image': c.product.imageUrl,
                 'category_name': c.product.categoryName,
                 'stock_quantity': c.product.stockQuantity,

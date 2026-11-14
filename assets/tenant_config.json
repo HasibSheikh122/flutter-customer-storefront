@@ -1,0 +1,17 @@
+{
+  "tenant_id": 23,
+  "subdomain": "bestbdbazar",
+  "store_domain": "bestbdbazar.shop.xylotechsolution.com",
+  "default_tenant_domain": "bestbdbazar.shop.xylotechsolution.com",
+  "api_base_url": "https://bestbdbazar.shop.xylotechsolution.com",
+  "app_name": "BestBdBazar",
+  "store_name": "BestBdBazar",
+  "app_slogan": "Authentic Online Shopping",
+  "bundle_id": "com.xylosaas.bestbdbazar.store",
+  "app_version": "1.0.0",
+  "primary_color": "#EA580C",
+  "secondary_color": "#C2410C",
+  "app_icon_url": "https://bestbdbazar.com/media/stores/apps/icons/footerlogo_1hq658A.png",
+  "is_admin_app": false,
+  "strict_tenant_lock": true
+}

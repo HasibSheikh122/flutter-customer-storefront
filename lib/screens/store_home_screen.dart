@@ -428,7 +428,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 11,
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -701,9 +701,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                       ),
                     ],
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            },
           ),
         ),
       ],

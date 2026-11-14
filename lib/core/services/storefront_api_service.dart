@@ -8,69 +8,126 @@ class StorefrontApiService {
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Tenant-Domain': StoreEnvConfig.compileTimeStoreDomain,
-        'X-Tenant-Subdomain': StoreEnvConfig.compileTimeSubdomain,
-        'X-Subdomain': StoreEnvConfig.compileTimeSubdomain,
+        'X-Tenant-Domain': StoreEnvConfig.storeDomain,
+        'X-Tenant-Subdomain': StoreEnvConfig.resolvedSubdomain,
+        'X-Subdomain': StoreEnvConfig.resolvedSubdomain,
       };
 
-  static Future<Map<String, dynamic>> fetchHomeData() async {
-    final String base = StoreEnvConfig.resolvedBaseUrl;
-    final String sub = StoreEnvConfig.compileTimeSubdomain;
+  Future> fetchHomeData() async {
+    final String base = StoreEnvConfig.apiBaseUrl;
+    final String sub = StoreEnvConfig.resolvedSubdomain;
     final Uri uri = Uri.parse('$base/api/v1/stores/home-data/?subdomain=$sub');
 
     final res = await http
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 12));
     if (res.statusCode == 200) {
-      return jsonDecode(res.body) as Map<String, dynamic>;
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
     }
     return {};
   }
 
-  static Future<List<StoreProduct>> fetchProducts(
-      {String? categorySlug, String? search}) async {
-    final String base = StoreEnvConfig.resolvedBaseUrl;
-    final String sub = StoreEnvConfig.compileTimeSubdomain;
-    final Map<String, String> query = {'subdomain': sub};
-    if (categorySlug != null && categorySlug.isNotEmpty)
-      query['category'] = categorySlug;
-    if (search != null && search.isNotEmpty) query['search'] = search;
+  Future<List>> fetchCategories() async {
+    final String base = StoreEnvConfig.apiBaseUrl;
+    final String sub = StoreEnvConfig.resolvedSubdomain;
+    final Uri uri = Uri.parse('$base/api/v1/products/categories/?subdomain=$sub');
 
-    final Uri uri =
-        Uri.parse('$base/api/v1/products/').replace(queryParameters: query);
-    final res = await http
-        .get(uri, headers: _headers)
-        .timeout(const Duration(seconds: 12));
-    if (res.statusCode == 200) {
-      final decoded = jsonDecode(res.body);
-      List<dynamic> list = [];
-      if (decoded is List) {
-        list = decoded;
-      } else if (decoded is Map && decoded['results'] is List) {
-        list = decoded['results'] as List<dynamic>;
+    try {
+      final res = await http
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        List<dynamic> list = [];
+        if (decoded is List) {
+          list = decoded;
+        } else if (decoded is Map && decoded['results'] is List) {
+          list = decoded['results'] as List<dynamic>;
+        }
+        return list
+            .whereType()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
       }
-      return list
-          .map((e) => StoreProduct.fromJson(e as Map<String, dynamic>))
-          .toList();
-    }
+    } catch (_) {}
     return [];
   }
 
-  static Future<Map<String, dynamic>> placeOrder({
+  Future<List>> fetchProducts({
+    String? categorySlug,
+    String? search,
+  }) async {
+    final String base = StoreEnvConfig.apiBaseUrl;
+    final String sub = StoreEnvConfig.resolvedSubdomain;
+    final Map<String, String> query = {'subdomain': sub};
+    if (categorySlug != null && categorySlug.isNotEmpty) {
+      query['category'] = categorySlug;
+    }
+    if (search != null && search.isNotEmpty) {
+      query['search'] = search;
+    }
+
+    final Uri uri =
+        Uri.parse('$base/api/v1/products/').replace(queryParameters: query);
+    try {
+      final res = await http
+          .get(uri, headers: _headers)
+          .timeout(const Duration(seconds: 12));
+      if (res.statusCode == 200) {
+        final decoded = jsonDecode(res.body);
+        List<dynamic> list = [];
+        if (decoded is List) {
+          list = decoded;
+        } else if (decoded is Map && decoded['results'] is List) {
+          list = decoded['results'] as List<dynamic>;
+        }
+        return list
+            .whereType()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  Future> submitOrder(Map<String, dynamic> payload) async {
+    final String base = StoreEnvConfig.apiBaseUrl;
+    final String sub = StoreEnvConfig.resolvedSubdomain;
+    final Uri uri = Uri.parse('$base/api/v1/orders/?subdomain=$sub');
+
+    final Map<String, dynamic> bodyPayload = {
+      'subdomain': sub,
+      ...payload,
+    };
+
+    final res = await http.post(
+      uri,
+      headers: _headers,
+      body: jsonEncode(bodyPayload),
+    );
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      final decoded = jsonDecode(res.body);
+      if (decoded is Map) {
+        return {'success': true, ...Map<String, dynamic>.from(decoded)};
+      }
+      return {'success': true};
+    }
+    throw Exception('অর্ডার সম্পন্ন করা যায়নি (Status ${res.statusCode})');
+  }
+
+  static Future> placeOrder({
     required String customerName,
     required String customerPhone,
     required String shippingAddress,
     required String paymentMethod,
     required List<CartItem> items,
   }) async {
-    final String base = StoreEnvConfig.resolvedBaseUrl;
-    final String sub = StoreEnvConfig.compileTimeSubdomain;
-    final Uri uri = Uri.parse('$base/api/v1/orders/?subdomain=$sub');
-
     final double total =
-        items.fold(0, (sum, i) => sum + (i.product.price * i.quantity));
+        items.fold(0.0, (sum, i) => sum + (i.product.price * i.quantity));
     final payload = {
-      'subdomain': sub,
       'customer_name': customerName.trim(),
       'customer_phone': customerPhone.trim(),
       'payment_method': paymentMethod,
@@ -89,12 +146,6 @@ class StorefrontApiService {
               })
           .toList(),
     };
-
-    final res =
-        await http.post(uri, headers: _headers, body: jsonEncode(payload));
-    if (res.statusCode == 200 || res.statusCode == 201) {
-      return jsonDecode(res.body) as Map<String, dynamic>;
-    }
-    throw Exception('অর্ডার সম্পন্ন করা যায়নি (Status ${res.statusCode})');
+    return StorefrontApiService().submitOrder(payload);
   }
 }

@@ -4,17 +4,17 @@ import 'package:flutter/material.dart';
 class StoreEnvConfig {
   static const String storeDomain = String.fromEnvironment(
     'STORE_DOMAIN',
-    defaultValue: 'buynarabd.shop.xylotechsolution.com',
+    defaultValue: 'bestbdbazar.shop.xylotechsolution.com',
   );
 
   static const String tenantSubdomain = String.fromEnvironment(
     'TENANT_SUBDOMAIN',
-    defaultValue: 'buynarabd',
+    defaultValue: 'bestbdbazar',
   );
 
   static const String appName = String.fromEnvironment(
     'APP_NAME',
-    defaultValue: 'Buynara',
+    defaultValue: 'BestBdBazar',
   );
 
   static const String appSlogan = String.fromEnvironment(
@@ -24,23 +24,28 @@ class StoreEnvConfig {
 
   static const String appIconUrl = String.fromEnvironment(
     'APP_ICON_URL',
-    defaultValue: '',
+    defaultValue: 'https://bestbdbazar.shop.xylotechsolution.com/media/stores/apps/icons/footerlogo_1hq658A.png',
   );
 
   static const String primaryColorHex = String.fromEnvironment(
     'PRIMARY_COLOR',
-    defaultValue: '#940558',
+    defaultValue: '#EA580C',
   );
 
   static const String secondaryColorHex = String.fromEnvironment(
     'SECONDARY_COLOR',
-    defaultValue: '#071fda',
+    defaultValue: '#C2410C',
   );
 
   static const String bundleId = String.fromEnvironment(
     'BUNDLE_ID',
-    defaultValue: 'com.xylosaas.buynara',
+    defaultValue: 'com.xylosaas.bestbdbazar.store',
   );
+
+  // Backwards-compatible aliases
+  static const String compileTimeStoreDomain = storeDomain;
+  static const String compileTimeSubdomain = tenantSubdomain;
+  static String get resolvedBaseUrl => apiBaseUrl;
 
   static String get cleanHost {
     String h = storeDomain.trim().toLowerCase();
@@ -60,20 +65,19 @@ class StoreEnvConfig {
         return first;
       }
     }
-    return 'buynarabd';
+    return 'bestbdbazar';
   }
 
   static String get apiBaseUrl {
     final h = cleanHost;
-    if (h.startsWith('localhost') ||
-        h.startsWith('127.0.0.1') ||
-        h.startsWith('10.0.2.2')) {
+    if (h.startsWith('localhost') || h.startsWith('127.0.0.1') || h.startsWith('10.0.2.2')) {
       return 'http://$h';
     }
     return 'https://$h';
   }
 
-  static Color hexToColor(String hex, {Color fallback = const Color(0xFF059669)}) {
+  static Color hexToColor(String? hex, {Color fallback = const Color(0xFF059669)}) {
+    if (hex == null || hex.trim().isEmpty) return fallback;
     String clean = hex.replaceAll('#', '').trim();
     if (clean.length == 6) clean = 'FF$clean';
     final int? val = int.tryParse(clean, radix: 16);
@@ -81,6 +85,5 @@ class StoreEnvConfig {
   }
 
   static Color get primaryColor => hexToColor(primaryColorHex);
-  static Color get secondaryColor =>
-      hexToColor(secondaryColorHex, fallback: const Color(0xFF047857));
+  static Color get secondaryColor => hexToColor(secondaryColorHex, fallback: const Color(0xFF047857));
 }

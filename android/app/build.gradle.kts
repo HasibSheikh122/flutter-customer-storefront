@@ -20,8 +20,8 @@ if (project.hasProperty("dart-defines")) {
     }
 }
 
-val resolvedBundleId = dartDefines["BUNDLE_ID"]?.takeIf { it.isNotBlank() } ?: "com.xylosaas.buynara"
-val resolvedAppName = dartDefines["APP_NAME"]?.takeIf { it.isNotBlank() } ?: "Buynara"
+val resolvedBundleId = dartDefines["BUNDLE_ID"]?.takeIf { it.isNotBlank() } ?: "com.xylosaas.bestbdbazar.store"
+val resolvedAppName = dartDefines["APP_NAME"]?.takeIf { it.isNotBlank() } ?: "BestBdBazar"
 
 android {
     namespace = "com.xylosaas.xylo_customer_storefront"
@@ -51,6 +51,7 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = false
             isShrinkResources = false
+            isCrunchPngs = false
         }
     }
 }
