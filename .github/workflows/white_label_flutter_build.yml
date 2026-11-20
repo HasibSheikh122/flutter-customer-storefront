@@ -10,11 +10,11 @@ on:
         required: true
         default: 'bestbdbazar.shop.xylotechsolution.com'
       subdomain:
-        description: 'Merchant Subdomain'
+        description: 'Tenant Subdomain'
         required: true
         default: 'bestbdbazar'
       app_name:
-        description: 'Branded Store App Name'
+        description: 'Branded App Name'
         required: true
         default: 'BestBdBazar'
       primary_color:
@@ -28,22 +28,29 @@ on:
       bundle_id:
         description: 'Android / iOS Package Bundle ID'
         required: false
-        default: 'com.xylosaas.bestbdbazar.store'
+        default: 'com.xylosaas.bestbdbazar'
       app_icon_url:
-        description: 'Merchant Uploaded Company App Icon URL'
+        description: 'Merchant Uploaded Company Logo URL'
         required: false
         default: ''
-      callback_upload_url:
-        description: 'Django Backend Callback Upload URL'
+      build_target:
+        description: 'Target Platform (all, store_apk, admin_apk, store_windows, admin_windows, store_ios, admin_ios)'
         required: false
-        default: ''
+        default: 'all'
 
 jobs:
   build_android_apk:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.build_target == 'store_apk' || github.event.client_payload.build_target == 'store_app' || github.event.client_payload.build_target == 'all' || github.event.client_payload.build_target == '' }}
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'store_app' ||
+      github.event.client_payload.build_target == 'admin_app' ||
+      github.event.client_payload.build_target == 'store_apk' ||
+      github.event.client_payload.build_target == 'admin_apk' ||
+      github.event.client_payload.build_target == ''
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Customer Storefront Repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -52,26 +59,26 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Flutter SDK
+      - name: Setup Flutter SDK (Latest Stable)
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: 'stable'
+          cache: true
 
-      - name: Inject Store Branding, Launcher Icon, Package ID & Tenant Config
+      - name: Inject Merchant Branding, Logo, Colors & Package ID
         env:
           STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
           SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
           APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
           APP_SLOGAN: ${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}
-          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
+          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar' }}
           PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}
           SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
           APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
         run: |
-          pip install Pillow
-          python3 -c '
-          import os, json, shutil, urllib.request
+          python3 -m pip install --quiet Pillow || true
+          python3 - << 'PY_BRAND'
+          import os, re, json, base64, shutil, urllib.request
           from PIL import Image
 
           sub = os.environ["SUBDOMAIN"].strip().lower()
@@ -96,10 +103,18 @@ jobs:
                       f.write(raw)
                   img = Image.open("assets/icon/app_icon.png").convert("RGBA")
               except Exception as e:
-                  print("Icon download warning:", e)
+                  print("Icon URL download warning (using repo icon):", e)
+
+          if img is None and os.path.isfile("assets/icon/app_icon.png"):
+              try:
+                  img = Image.open("assets/icon/app_icon.png").convert("RGBA")
+              except Exception:
+                  img = None
 
           if img is None:
-              img = Image.new("RGBA", (512, 512), (5, 150, 105, 255))
+              hex_c = p_col.lstrip("#")
+              rgb = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4)) if len(hex_c) == 6 else (5, 150, 105)
+              img = Image.new("RGBA", (512, 512), (*rgb, 255))
 
           sq = Image.new("RGBA", (512, 512), (255, 255, 255, 255))
           cp = img.copy()
@@ -112,141 +127,187 @@ jobs:
           for anydpi in ("mipmap-anydpi-v26", "mipmap-anydpi"):
               shutil.rmtree(os.path.join(res_root, anydpi), ignore_errors=True)
 
-          for folder, px in {"mipmap-mdpi": 48, "mipmap-hdpi": 72, "mipmap-xhdpi": 96, "mipmap-xxhdpi": 144, "mipmap-xxxhdpi": 192}.items():
+          for folder, px in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
               d = os.path.join(res_root, folder)
               os.makedirs(d, exist_ok=True)
               resized = sq.resize((px, px), Image.Resampling.LANCZOS)
               resized.save(os.path.join(d, "ic_launcher.png"), format="PNG")
               resized.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
 
-          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
-              json.dump({
-                  "subdomain": sub,
-                  "store_domain": dom,
-                  "api_base_url": f"https://{dom}",
-                  "app_name": name,
-                  "store_name": name,
-                  "app_slogan": slogan,
-                  "bundle_id": bundle,
-                  "primary_color": p_col,
-                  "secondary_color": s_col,
-                  "app_icon_url": icon_url,
-                  "is_admin_app": False,
-                  "strict_tenant_lock": True,
-              }, f, indent=2, ensure_ascii=False)
-          '
+          manifest_p = "android/app/src/main/AndroidManifest.xml"
+          if os.path.isfile(manifest_p):
+              with open(manifest_p, "r", encoding="utf-8") as mf:
+                  mtxt = mf.read()
+              safe_lbl = name.replace("&", "&amp;").replace('"', "&quot;")
+              mtxt = re.sub(r'android:label="[^"]*"', f'android:label="{safe_lbl}"', mtxt, count=1)
+              with open(manifest_p, "w", encoding="utf-8") as mf:
+                  mf.write(mtxt)
 
-      - name: Initialize Android & Dependencies
+          with open("assets/icon/app_icon.png", "rb") as bf:
+              b64_icon = base64.b64encode(bf.read()).decode("ascii")
+
+          cfg = {
+              "subdomain": sub,
+              "store_domain": dom,
+              "api_base_url": f"https://{dom}",
+              "app_name": name,
+              "store_name": name,
+              "app_slogan": slogan,
+              "bundle_id": bundle,
+              "primary_color": p_col,
+              "secondary_color": s_col,
+              "app_icon_url": icon_url,
+              "app_icon_base64": b64_icon,
+              "is_admin_app": False,
+              "strict_tenant_lock": True,
+          }
+          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, indent=2, ensure_ascii=False)
+          PY_BRAND
+
+      - name: Prepare Android Platform & Dependencies
         run: |
           flutter config --enable-android
+          if [ ! -d "android" ]; then
+            flutter create . --platforms=android --project-name xylo_customer_storefront --org com.xylosaas
+          fi
+          rm -rf android/app/src/main/res/mipmap-anydpi-v26 android/app/src/main/res/mipmap-anydpi
+          rm -f pubspec.lock
           flutter pub get
 
-      - name: Build Signed White-Label Android APK
+      - name: Build Signed Release Android APK
         run: |
           DOMAIN="${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
           SUB="${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
           NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}"
           SLOGAN="${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}"
-          ICON="${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
           COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
           SCOLOR="${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
-          BUNDLE="${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}"
+          BUNDLE="${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar' }}"
+          ICON_URL="${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
           flutter build apk --release --no-tree-shake-icons \
             --dart-define=STORE_DOMAIN="$DOMAIN" \
+            --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" \
             --dart-define=TENANT_SUBDOMAIN="$SUB" \
             --dart-define=APP_NAME="$NAME" \
             --dart-define=APP_SLOGAN="$SLOGAN" \
-            --dart-define=APP_ICON_URL="$ICON" \
             --dart-define=PRIMARY_COLOR="$COLOR" \
             --dart-define=SECONDARY_COLOR="$SCOLOR" \
-            --dart-define=BUNDLE_ID="$BUNDLE"
+            --dart-define=BUNDLE_ID="$BUNDLE" \
+            --dart-define=APP_ICON_URL="$ICON_URL" \
+            --dart-define=IS_MERCHANT_ADMIN=false
 
-      - name: Upload Compiled Store APK Artifact to GitHub
+      - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: storefront-android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      - name: Push Compiled Store APK Directly to Django Backend
-        if: ${{ (github.event.client_payload.callback_upload_url || github.event.inputs.callback_upload_url) != '' }}
-        env:
-          CALLBACK_URL: ${{ github.event.client_payload.callback_upload_url || github.event.inputs.callback_upload_url }}
-          SUB: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
-          DOM: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
+      - name: Sync APK to Merchant Dashboard
+        if: success()
         run: |
-          curl -k -L -X POST "$CALLBACK_URL" \
-            -H "X-Tenant-Subdomain: $SUB" \
-            -H "X-Tenant-Domain: $DOM" \
-            -F "subdomain=$SUB" \
-            -F "build_status=ready" \
-            -F "store_apk_file=@build/app/outputs/flutter-apk/app-release.apk;filename=${SUB}-store-android.apk" || true
+          CALLBACK="${{ github.event.client_payload.callback_upload_url || '' }}"
+          SUB="${{ github.event.client_payload.subdomain || 'bestbdbazar' }}"
+          DOM="${{ github.event.client_payload.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
+          if [ -n "$CALLBACK" ] && [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
+            curl -k -L -sS -X POST "$CALLBACK" \
+              -H "X-Tenant-Subdomain: $SUB" \
+              -H "X-Tenant-Domain: $DOM" \
+              -F "store_apk_file=@build/app/outputs/flutter-apk/app-release.apk;filename=${SUB}-store-android.apk" \
+              -F "subdomain=$SUB" \
+              -F "build_status=ready" || true
+          fi
 
   build_windows_exe:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.build_target == 'store_windows' || github.event.client_payload.build_target == 'store_app' || github.event.client_payload.build_target == 'all' }}
+    if: >-
+      github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'store_app' ||
+      github.event.client_payload.build_target == 'admin_app' ||
+      github.event.client_payload.build_target == 'store_windows' ||
+      github.event.client_payload.build_target == 'admin_windows'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter SDK (Latest Stable)
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: 'stable'
+          cache: true
 
-      - name: Initialize Windows & Dependencies
+      - name: Enable Windows & Get Packages
         run: |
           flutter config --enable-windows-desktop
-          flutter create . --platforms=windows --project-name xylo_customer_storefront
+          if (!(Test-Path "windows")) {
+            flutter create . --platforms=windows --project-name xylo_customer_storefront
+          }
+          if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" -Force }
           flutter pub get
 
-      - name: Build Windows Storefront Executable (.exe)
+      - name: Build Windows Executable (.exe)
         run: |
           $DOMAIN = "${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
           $SUB = "${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
           $NAME = "${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}"
           $COLOR = "${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
           flutter build windows --release `
-            --dart-define=STORE_DOMAIN=$DOMAIN `
-            --dart-define=TENANT_SUBDOMAIN=$SUB `
+            --dart-define=STORE_DOMAIN="$DOMAIN" `
+            --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" `
+            --dart-define=TENANT_SUBDOMAIN="$SUB" `
             --dart-define=APP_NAME="$NAME" `
-            --dart-define=PRIMARY_COLOR="$COLOR"
+            --dart-define=PRIMARY_COLOR="$COLOR" `
+            --dart-define=IS_MERCHANT_ADMIN=false
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows EXE Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: storefront-windows-exe
           path: build/windows/x64/runner/Release/
 
-      - name: Push Compiled Store Windows Build to Django Backend
-        if: ${{ (github.event.client_payload.callback_upload_url || github.event.inputs.callback_upload_url) != '' }}
+      - name: Sync Windows EXE to Merchant Dashboard
+        if: success()
         shell: bash
-        env:
-          CALLBACK_URL: ${{ github.event.client_payload.callback_upload_url || github.event.inputs.callback_upload_url }}
-          SUB: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
-          DOM: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
         run: |
-          curl -k -L -X POST "$CALLBACK_URL" \
-            -H "X-Tenant-Subdomain: $SUB" \
-            -H "X-Tenant-Domain: $DOM" \
-            -F "subdomain=$SUB" \
-            -F "build_status=ready" \
-            -F "store_windows_file=@build/windows/x64/runner/Release/xylo_customer_storefront.exe;filename=${SUB}-store-windows.exe" || true
+          CALLBACK="${{ github.event.client_payload.callback_upload_url || '' }}"
+          SUB="${{ github.event.client_payload.subdomain || 'bestbdbazar' }}"
+          DOM="${{ github.event.client_payload.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
+          if [ -n "$CALLBACK" ] && [ -f "build/windows/x64/runner/Release/xylo_customer_storefront.exe" ]; then
+            curl -k -L -sS -X POST "$CALLBACK" \
+              -H "X-Tenant-Subdomain: $SUB" \
+              -H "X-Tenant-Domain: $DOM" \
+              -F "store_windows_file=@build/windows/x64/runner/Release/xylo_customer_storefront.exe;filename=${SUB}-store-windows.exe" \
+              -F "subdomain=$SUB" \
+              -F "build_status=ready" || true
+          fi
 
   build_apple_ios:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.client_payload.build_target == 'store_ios' || github.event.client_payload.build_target == 'store_app' || github.event.client_payload.build_target == 'all' }}
+    if: >-
+      github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'store_app' ||
+      github.event.client_payload.build_target == 'admin_app' ||
+      github.event.client_payload.build_target == 'store_ios' ||
+      github.event.client_payload.build_target == 'admin_ios'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-      - uses: subosito/flutter-action@v2
+      - name: Setup Flutter SDK (Latest Stable)
+        uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.0'
           channel: 'stable'
+          cache: true
 
-      - name: Initialize iOS & Dependencies
+      - name: Prepare iOS & Get Packages
         run: |
-          flutter create . --platforms=ios --project-name xylo_customer_storefront --org com.xylosaas
+          if [ ! -d "ios" ]; then
+            flutter create . --platforms=ios --project-name xylo_customer_storefront --org com.xylosaas
+          fi
+          rm -f pubspec.lock
           flutter pub get
 
-      - name: Build iOS White-Label IPA (No Codesign)
+      - name: Build iOS IPA (No Codesign)
         run: |
           DOMAIN="${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
           SUB="${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
@@ -254,28 +315,32 @@ jobs:
           COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
           flutter build ios --release --no-codesign \
             --dart-define=STORE_DOMAIN="$DOMAIN" \
+            --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" \
             --dart-define=TENANT_SUBDOMAIN="$SUB" \
             --dart-define=APP_NAME="$NAME" \
-            --dart-define=PRIMARY_COLOR="$COLOR"
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r store-release.ipa Payload
+            --dart-define=PRIMARY_COLOR="$COLOR" \
+            --dart-define=IS_MERCHANT_ADMIN=false
+          mkdir -p build/ios/ipa/Payload
+          cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          cd build/ios/ipa && zip -r -q app-release.ipa Payload
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload iOS IPA Artifact
+        uses: actions/upload-artifact@v4
         with:
           name: storefront-ios-ipa
-          path: store-release.ipa
+          path: build/ios/ipa/app-release.ipa
 
-      - name: Push Compiled Store iOS IPA to Django Backend
-        if: ${{ (github.event.client_payload.callback_upload_url || github.event.inputs.callback_upload_url) != '' }}
-        env:
-          CALLBACK_URL: ${{ github.event.client_payload.callback_upload_url || github.event.inputs.callback_upload_url }}
-          SUB: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
-          DOM: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
+      - name: Sync iOS IPA to Merchant Dashboard
+        if: success()
         run: |
-          curl -k -L -X POST "$CALLBACK_URL" \
-            -H "X-Tenant-Subdomain: $SUB" \
-            -H "X-Tenant-Domain: $DOM" \
-            -F "subdomain=$SUB" \
-            -F "build_status=ready" \
-            -F "store_ios_file=@store-release.ipa;filename=${SUB}-store-ios.ipa" || true
+          CALLBACK="${{ github.event.client_payload.callback_upload_url || '' }}"
+          SUB="${{ github.event.client_payload.subdomain || 'bestbdbazar' }}"
+          DOM="${{ github.event.client_payload.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
+          if [ -n "$CALLBACK" ] && [ -f "build/ios/ipa/app-release.ipa" ]; then
+            curl -k -L -sS -X POST "$CALLBACK" \
+              -H "X-Tenant-Subdomain: $SUB" \
+              -H "X-Tenant-Domain: $DOM" \
+              -F "store_ios_file=@build/ios/ipa/app-release.ipa;filename=${SUB}-store-ios.ipa" \
+              -F "subdomain=$SUB" \
+              -F "build_status=ready" || true
+          fi
