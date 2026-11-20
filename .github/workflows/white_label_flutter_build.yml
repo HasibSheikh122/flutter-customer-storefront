@@ -221,7 +221,9 @@ jobs:
 
   build_windows_exe:
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == '' ||
       github.event.client_payload.build_target == 'store_app' ||
       github.event.client_payload.build_target == 'admin_app' ||
       github.event.client_payload.build_target == 'store_windows' ||
@@ -285,7 +287,9 @@ jobs:
 
   build_apple_ios:
     if: >-
+      github.event_name == 'workflow_dispatch' ||
       github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == '' ||
       github.event.client_payload.build_target == 'store_app' ||
       github.event.client_payload.build_target == 'admin_app' ||
       github.event.client_payload.build_target == 'store_ios' ||
