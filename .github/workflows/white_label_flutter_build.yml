@@ -59,9 +59,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Flutter SDK (Latest Stable)
+      - name: Setup Flutter SDK (3.29.3 Stable)
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.29.3'
           channel: 'stable'
           cache: true
 
@@ -185,7 +186,7 @@ jobs:
           SCOLOR="${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
           BUNDLE="${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar' }}"
           ICON_URL="${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
-          flutter build apk --release --no-tree-shake-icons \
+          flutter build apk --release --no-tree-shake-icons --android-skip-build-dependency-validation \
             --dart-define=STORE_DOMAIN="$DOMAIN" \
             --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" \
             --dart-define=TENANT_SUBDOMAIN="$SUB" \
@@ -230,9 +231,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter SDK (Latest Stable)
+      - name: Setup Flutter SDK (3.29.3 Stable)
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.29.3'
           channel: 'stable'
           cache: true
 
@@ -293,9 +295,10 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Flutter SDK (Latest Stable)
+      - name: Setup Flutter SDK (3.29.3 Stable)
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.29.3'
           channel: 'stable'
           cache: true
 
