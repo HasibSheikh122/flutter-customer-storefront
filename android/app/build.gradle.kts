@@ -26,7 +26,7 @@ val resolvedAppName = dartDefines["APP_NAME"]?.takeIf { it.isNotBlank() } ?: "Be
 android {
     namespace = "com.xylosaas.xylo_customer_storefront"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

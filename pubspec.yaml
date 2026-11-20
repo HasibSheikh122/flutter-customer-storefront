@@ -1,7 +1,7 @@
 name: xylo_customer_storefront
-description: Zero-Knowledge White-Label Customer Storefront Flutter App (Spec V2.4)
+description: White-Label Multi-Tenant Flutter App
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.1+1
 
 environment:
   sdk: '>=3.2.0 <4.0.0'
@@ -26,4 +26,3 @@ flutter:
     - assets/tenant_config.json
     - assets/icon/app_icon.png
     - assets/images/app_icon.png
-

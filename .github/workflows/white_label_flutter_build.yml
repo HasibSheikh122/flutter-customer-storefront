@@ -164,6 +164,29 @@ jobs:
           }
           with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
               json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+          # Auto-heal Flutter 3.29.3 compatibility & NDK 27.0.12077973
+          gradle_p = "android/app/build.gradle.kts"
+          if os.path.isfile(gradle_p):
+              with open(gradle_p, "r", encoding="utf-8") as gf:
+                  gtxt = gf.read()
+              gtxt = gtxt.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
+              with open(gradle_p, "w", encoding="utf-8") as gf:
+                  gf.write(gtxt)
+
+          for root, _, files in os.walk("lib"):
+              for fn in files:
+                  if not fn.endswith(".dart"):
+                      continue
+                  fp = os.path.join(root, fn)
+                  with open(fp, "r", encoding="utf-8") as df:
+                      dtxt = df.read()
+                  orig = dtxt
+                  dtxt = dtxt.replace("activeThumbColor:", "activeColor:")
+                  dtxt = dtxt.replace("initialValue: value,", "value: value,")
+                  if dtxt != orig:
+                      with open(fp, "w", encoding="utf-8") as df:
+                          df.write(dtxt)
           PY_BRAND
 
       - name: Prepare Android Platform & Dependencies
