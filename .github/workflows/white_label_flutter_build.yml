@@ -1,5 +1,10 @@
 name: Multi-Tenant Customer White-Label Storefront Flutter Build
 
+run-name: "${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'Merchant' }} (${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'store' }}) — Customer Storefront Build"
+
+permissions:
+  contents: write
+
 on:
   repository_dispatch:
     types: [generate_merchant_app]
@@ -28,13 +33,13 @@ on:
       bundle_id:
         description: 'Android / iOS Package Bundle ID'
         required: false
-        default: 'com.xylosaas.bestbdbazar'
+        default: 'com.xylosaas.bestbdbazar.store'
       app_icon_url:
         description: 'Merchant Uploaded Company Logo URL'
         required: false
         default: ''
       build_target:
-        description: 'Target Platform (all, store_apk, admin_apk, store_windows, admin_windows, store_ios, admin_ios)'
+        description: 'Target Platform (all, android, windows, ios)'
         required: false
         default: 'all'
 
@@ -43,6 +48,7 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'android' ||
       github.event.client_payload.build_target == 'store_app' ||
       github.event.client_payload.build_target == 'admin_app' ||
       github.event.client_payload.build_target == 'store_apk' ||
@@ -66,13 +72,14 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Inject Merchant Branding, Logo, Colors & Package ID
+      - name: Inject Merchant Branding, Logo & Config (Android)
         env:
           STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
           SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
           APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
           APP_SLOGAN: ${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}
-          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar' }}
+          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
+          APP_VERSION: ${{ github.event.client_payload.app_version || '1.0.0' }}
           PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}
           SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
           APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
@@ -82,14 +89,15 @@ jobs:
           import os, re, json, base64, shutil, urllib.request
           from PIL import Image
 
-          sub = os.environ["SUBDOMAIN"].strip().lower()
-          dom = os.environ["STORE_DOMAIN"].strip().lower()
-          name = os.environ["APP_NAME"].strip()
-          slogan = os.environ["APP_SLOGAN"].strip()
-          bundle = os.environ["BUNDLE_ID"].strip()
-          p_col = os.environ["PRIMARY_COLOR"].strip()
-          s_col = os.environ["SECONDARY_COLOR"].strip()
+          sub = os.environ["SUBDOMAIN"].strip().lower() or "store"
+          dom = os.environ["STORE_DOMAIN"].strip().lower() or f"{sub}.shop.xylotechsolution.com"
+          name = os.environ["APP_NAME"].strip() or sub.capitalize()
+          slogan = os.environ["APP_SLOGAN"].strip() or "Authentic Online Shopping"
+          bundle = os.environ["BUNDLE_ID"].strip() or f"com.xylosaas.{sub}.store"
+          p_col = os.environ["PRIMARY_COLOR"].strip() or "#059669"
+          s_col = os.environ["SECONDARY_COLOR"].strip() or "#047857"
           icon_url = os.environ["APP_ICON_URL"].strip()
+          app_ver = os.environ.get("APP_VERSION", "1.0.0").strip() or "1.0.0"
 
           os.makedirs("assets/icon", exist_ok=True)
           os.makedirs("assets/images", exist_ok=True)
@@ -98,19 +106,13 @@ jobs:
           if icon_url:
               try:
                   req = urllib.request.Request(icon_url, headers={"User-Agent": "Mozilla/5.0"})
-                  with urllib.request.urlopen(req, timeout=20) as r:
+                  with urllib.request.urlopen(req, timeout=25) as r:
                       raw = r.read()
                   with open("assets/icon/app_icon.png", "wb") as f:
                       f.write(raw)
                   img = Image.open("assets/icon/app_icon.png").convert("RGBA")
               except Exception as e:
-                  print("Icon URL download warning (using repo icon):", e)
-
-          if img is None and os.path.isfile("assets/icon/app_icon.png"):
-              try:
-                  img = Image.open("assets/icon/app_icon.png").convert("RGBA")
-              except Exception:
-                  img = None
+                  print("Icon URL warning:", e)
 
           if img is None:
               hex_c = p_col.lstrip("#")
@@ -124,16 +126,30 @@ jobs:
           sq.save("assets/icon/app_icon.png", format="PNG")
           sq.save("assets/images/app_icon.png", format="PNG")
 
-          res_root = "android/app/src/main/res"
-          for anydpi in ("mipmap-anydpi-v26", "mipmap-anydpi"):
-              shutil.rmtree(os.path.join(res_root, anydpi), ignore_errors=True)
+          with open("assets/icon/app_icon.png", "rb") as bf:
+              b64_icon = base64.b64encode(bf.read()).decode("ascii")
 
-          for folder, px in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
-              d = os.path.join(res_root, folder)
-              os.makedirs(d, exist_ok=True)
-              resized = sq.resize((px, px), Image.Resampling.LANCZOS)
-              resized.save(os.path.join(d, "ic_launcher.png"), format="PNG")
-              resized.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
+          cfg = {
+              "subdomain": sub, "store_domain": dom, "api_base_url": f"https://{dom}",
+              "app_name": name, "store_name": name, "app_slogan": slogan,
+              "bundle_id": bundle, "app_version": app_ver,
+              "primary_color": p_col, "secondary_color": s_col,
+              "app_icon_url": icon_url, "app_icon_base64": b64_icon,
+              "is_admin_app": False, "strict_tenant_lock": True,
+          }
+          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+          res_root = "android/app/src/main/res"
+          if os.path.isdir(res_root):
+              for anydpi in ("mipmap-anydpi-v26", "mipmap-anydpi"):
+                  shutil.rmtree(os.path.join(res_root, anydpi), ignore_errors=True)
+              for folder, px in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
+                  d = os.path.join(res_root, folder)
+                  os.makedirs(d, exist_ok=True)
+                  r_im = sq.resize((px, px), Image.Resampling.LANCZOS)
+                  r_im.save(os.path.join(d, "ic_launcher.png"), format="PNG")
+                  r_im.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
 
           manifest_p = "android/app/src/main/AndroidManifest.xml"
           if os.path.isfile(manifest_p):
@@ -144,26 +160,24 @@ jobs:
               with open(manifest_p, "w", encoding="utf-8") as mf:
                   mf.write(mtxt)
 
-          with open("assets/icon/app_icon.png", "rb") as bf:
-              b64_icon = base64.b64encode(bf.read()).decode("ascii")
+          gradle_p = "android/app/build.gradle.kts"
+          if os.path.isfile(gradle_p):
+              with open(gradle_p, "r", encoding="utf-8") as gf:
+                  gtxt = gf.read()
+              gtxt = gtxt.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
+              with open(gradle_p, "w", encoding="utf-8") as gf:
+                  gf.write(gtxt)
 
-          cfg = {
-              "subdomain": sub,
-              "store_domain": dom,
-              "api_base_url": f"https://{dom}",
-              "app_name": name,
-              "store_name": name,
-              "app_slogan": slogan,
-              "bundle_id": bundle,
-              "primary_color": p_col,
-              "secondary_color": s_col,
-              "app_icon_url": icon_url,
-              "app_icon_base64": b64_icon,
-              "is_admin_app": False,
-              "strict_tenant_lock": True,
-          }
-          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
-              json.dump(cfg, f, indent=2, ensure_ascii=False)
+          for root, _, files in os.walk("lib"):
+              for fn in files:
+                  if fn.endswith(".dart"):
+                      fp = os.path.join(root, fn)
+                      with open(fp, "r", encoding="utf-8") as df:
+                          dtxt = df.read()
+                      fixed = dtxt.replace("activeThumbColor:", "activeColor:").replace("initialValue: value,", "value: value,")
+                      if fixed != dtxt:
+                          with open(fp, "w", encoding="utf-8") as df:
+                              df.write(fixed)
           PY_BRAND
 
       - name: Prepare Android Platform & Dependencies
@@ -184,7 +198,7 @@ jobs:
           SLOGAN="${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}"
           COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
           SCOLOR="${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
-          BUNDLE="${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar' }}"
+          BUNDLE="${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}"
           ICON_URL="${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
           flutter build apk --release --no-tree-shake-icons --android-skip-build-dependency-validation \
             --dart-define=STORE_DOMAIN="$DOMAIN" \
@@ -197,32 +211,20 @@ jobs:
             --dart-define=BUNDLE_ID="$BUNDLE" \
             --dart-define=APP_ICON_URL="$ICON_URL" \
             --dart-define=IS_MERCHANT_ADMIN=false
+          mkdir -p release_assets
+          cp build/app/outputs/flutter-apk/app-release.apk "release_assets/${SUB}-store-android.apk"
 
       - name: Upload Android APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: storefront-android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-
-      - name: Sync APK to Merchant Dashboard
-        if: success()
-        run: |
-          CALLBACK="${{ github.event.client_payload.callback_upload_url || '' }}"
-          SUB="${{ github.event.client_payload.subdomain || 'bestbdbazar' }}"
-          DOM="${{ github.event.client_payload.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
-          if [ -n "$CALLBACK" ] && [ -f "build/app/outputs/flutter-apk/app-release.apk" ]; then
-            curl -k -L -sS -X POST "$CALLBACK" \
-              -H "X-Tenant-Subdomain: $SUB" \
-              -H "X-Tenant-Domain: $DOM" \
-              -F "store_apk_file=@build/app/outputs/flutter-apk/app-release.apk;filename=${SUB}-store-android.apk" \
-              -F "subdomain=$SUB" \
-              -F "build_status=ready" || true
-          fi
+          path: release_assets/*.apk
 
   build_windows_exe:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'windows' ||
       github.event.client_payload.build_target == '' ||
       github.event.client_payload.build_target == 'store_app' ||
       github.event.client_payload.build_target == 'admin_app' ||
@@ -240,6 +242,99 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Inject Merchant Branding, Logo & Title (Windows)
+        shell: bash
+        env:
+          STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
+          SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
+          APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
+          APP_SLOGAN: ${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}
+          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
+          APP_VERSION: ${{ github.event.client_payload.app_version || '1.0.0' }}
+          PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}
+          SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
+          APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+        run: |
+          python -m pip install --quiet Pillow || true
+          python - << 'PY_BRAND'
+          import os, re, json, base64, urllib.request
+          from PIL import Image
+
+          sub = os.environ["SUBDOMAIN"].strip().lower() or "store"
+          dom = os.environ["STORE_DOMAIN"].strip().lower() or f"{sub}.shop.xylotechsolution.com"
+          name = os.environ["APP_NAME"].strip() or sub.capitalize()
+          slogan = os.environ["APP_SLOGAN"].strip() or "Authentic Online Shopping"
+          bundle = os.environ["BUNDLE_ID"].strip() or f"com.xylosaas.{sub}.store"
+          p_col = os.environ["PRIMARY_COLOR"].strip() or "#059669"
+          s_col = os.environ["SECONDARY_COLOR"].strip() or "#047857"
+          icon_url = os.environ["APP_ICON_URL"].strip()
+          app_ver = os.environ.get("APP_VERSION", "1.0.0").strip() or "1.0.0"
+
+          os.makedirs("assets/icon", exist_ok=True)
+          os.makedirs("assets/images", exist_ok=True)
+
+          img = None
+          if icon_url:
+              try:
+                  req = urllib.request.Request(icon_url, headers={"User-Agent": "Mozilla/5.0"})
+                  with urllib.request.urlopen(req, timeout=25) as r:
+                      raw = r.read()
+                  with open("assets/icon/app_icon.png", "wb") as f:
+                      f.write(raw)
+                  img = Image.open("assets/icon/app_icon.png").convert("RGBA")
+              except Exception as e:
+                  print("Icon URL warning:", e)
+
+          if img is None:
+              hex_c = p_col.lstrip("#")
+              rgb = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4)) if len(hex_c) == 6 else (5, 150, 105)
+              img = Image.new("RGBA", (512, 512), (*rgb, 255))
+
+          sq = Image.new("RGBA", (512, 512), (255, 255, 255, 255))
+          cp = img.copy()
+          cp.thumbnail((512, 512), Image.Resampling.LANCZOS)
+          sq.paste(cp, ((512 - cp.width) // 2, (512 - cp.height) // 2), cp)
+          sq.save("assets/icon/app_icon.png", format="PNG")
+          sq.save("assets/images/app_icon.png", format="PNG")
+
+          with open("assets/icon/app_icon.png", "rb") as bf:
+              b64_icon = base64.b64encode(bf.read()).decode("ascii")
+
+          cfg = {
+              "subdomain": sub, "store_domain": dom, "api_base_url": f"https://{dom}",
+              "app_name": name, "store_name": name, "app_slogan": slogan,
+              "bundle_id": bundle, "app_version": app_ver,
+              "primary_color": p_col, "secondary_color": s_col,
+              "app_icon_url": icon_url, "app_icon_base64": b64_icon,
+              "is_admin_app": False, "strict_tenant_lock": True,
+          }
+          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+          win_res = "windows/runner/resources"
+          if os.path.isdir(win_res):
+              sq.save(os.path.join(win_res, "app_icon.ico"), format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+          win_main = "windows/runner/main.cpp"
+          if os.path.isfile(win_main):
+              with open(win_main, "r", encoding="utf-8") as wf:
+                  wtxt = wf.read()
+              safe_win = name.replace('\\', '').replace('"', '')
+              wtxt = re.sub(r'window\.Create\(L"[^"]*"', f'window.Create(L"{safe_win}"', wtxt)
+              with open(win_main, "w", encoding="utf-8") as wf:
+                  wf.write(wtxt)
+
+          for root, _, files in os.walk("lib"):
+              for fn in files:
+                  if fn.endswith(".dart"):
+                      fp = os.path.join(root, fn)
+                      with open(fp, "r", encoding="utf-8") as df:
+                          dtxt = df.read()
+                      fixed = dtxt.replace("activeThumbColor:", "activeColor:").replace("initialValue: value,", "value: value,")
+                      if fixed != dtxt:
+                          with open(fp, "w", encoding="utf-8") as df:
+                              df.write(fixed)
+          PY_BRAND
+
       - name: Enable Windows & Get Packages
         run: |
           flutter config --enable-windows-desktop
@@ -249,46 +344,41 @@ jobs:
           if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" -Force }
           flutter pub get
 
-      - name: Build Windows Executable (.exe)
+      - name: Build Windows Release & Package Portable ZIP
         run: |
           $DOMAIN = "${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
           $SUB = "${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
           $NAME = "${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}"
+          $SLOGAN = "${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}"
           $COLOR = "${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
+          $SCOLOR = "${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
+          $BUNDLE = "${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}"
+          $ICON_URL = "${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
           flutter build windows --release `
             --dart-define=STORE_DOMAIN="$DOMAIN" `
             --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" `
             --dart-define=TENANT_SUBDOMAIN="$SUB" `
             --dart-define=APP_NAME="$NAME" `
+            --dart-define=APP_SLOGAN="$SLOGAN" `
             --dart-define=PRIMARY_COLOR="$COLOR" `
+            --dart-define=SECONDARY_COLOR="$SCOLOR" `
+            --dart-define=BUNDLE_ID="$BUNDLE" `
+            --dart-define=APP_ICON_URL="$ICON_URL" `
             --dart-define=IS_MERCHANT_ADMIN=false
+          New-Item -ItemType Directory -Force -Path "release_assets" | Out-Null
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "release_assets/$SUB-store-windows.zip" -Force
 
-      - name: Upload Windows EXE Artifact
+      - name: Upload Windows Portable ZIP Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: storefront-windows-exe
-          path: build/windows/x64/runner/Release/
-
-      - name: Sync Windows EXE to Merchant Dashboard
-        if: success()
-        shell: bash
-        run: |
-          CALLBACK="${{ github.event.client_payload.callback_upload_url || '' }}"
-          SUB="${{ github.event.client_payload.subdomain || 'bestbdbazar' }}"
-          DOM="${{ github.event.client_payload.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
-          if [ -n "$CALLBACK" ] && [ -f "build/windows/x64/runner/Release/xylo_customer_storefront.exe" ]; then
-            curl -k -L -sS -X POST "$CALLBACK" \
-              -H "X-Tenant-Subdomain: $SUB" \
-              -H "X-Tenant-Domain: $DOM" \
-              -F "store_windows_file=@build/windows/x64/runner/Release/xylo_customer_storefront.exe;filename=${SUB}-store-windows.exe" \
-              -F "subdomain=$SUB" \
-              -F "build_status=ready" || true
-          fi
+          name: storefront-windows-zip
+          path: release_assets/*.zip
 
   build_apple_ios:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'ios' ||
       github.event.client_payload.build_target == '' ||
       github.event.client_payload.build_target == 'store_app' ||
       github.event.client_payload.build_target == 'admin_app' ||
@@ -306,6 +396,113 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Inject Merchant Branding, Logo & Bundle ID (iOS)
+        env:
+          STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
+          SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
+          APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
+          APP_SLOGAN: ${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}
+          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
+          APP_VERSION: ${{ github.event.client_payload.app_version || '1.0.0' }}
+          PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}
+          SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
+          APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+        run: |
+          python3 -m pip install --quiet Pillow || true
+          python3 - << 'PY_BRAND'
+          import os, re, json, base64, urllib.request
+          from PIL import Image
+
+          sub = os.environ["SUBDOMAIN"].strip().lower() or "store"
+          dom = os.environ["STORE_DOMAIN"].strip().lower() or f"{sub}.shop.xylotechsolution.com"
+          name = os.environ["APP_NAME"].strip() or sub.capitalize()
+          slogan = os.environ["APP_SLOGAN"].strip() or "Authentic Online Shopping"
+          bundle = os.environ["BUNDLE_ID"].strip() or f"com.xylosaas.{sub}.store"
+          p_col = os.environ["PRIMARY_COLOR"].strip() or "#059669"
+          s_col = os.environ["SECONDARY_COLOR"].strip() or "#047857"
+          icon_url = os.environ["APP_ICON_URL"].strip()
+          app_ver = os.environ.get("APP_VERSION", "1.0.0").strip() or "1.0.0"
+
+          os.makedirs("assets/icon", exist_ok=True)
+          os.makedirs("assets/images", exist_ok=True)
+
+          img = None
+          if icon_url:
+              try:
+                  req = urllib.request.Request(icon_url, headers={"User-Agent": "Mozilla/5.0"})
+                  with urllib.request.urlopen(req, timeout=25) as r:
+                      raw = r.read()
+                  with open("assets/icon/app_icon.png", "wb") as f:
+                      f.write(raw)
+                  img = Image.open("assets/icon/app_icon.png").convert("RGBA")
+              except Exception as e:
+                  print("Icon URL warning:", e)
+
+          if img is None:
+              hex_c = p_col.lstrip("#")
+              rgb = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4)) if len(hex_c) == 6 else (5, 150, 105)
+              img = Image.new("RGBA", (512, 512), (*rgb, 255))
+
+          sq = Image.new("RGBA", (512, 512), (255, 255, 255, 255))
+          cp = img.copy()
+          cp.thumbnail((512, 512), Image.Resampling.LANCZOS)
+          sq.paste(cp, ((512 - cp.width) // 2, (512 - cp.height) // 2), cp)
+          sq.save("assets/icon/app_icon.png", format="PNG")
+          sq.save("assets/images/app_icon.png", format="PNG")
+
+          with open("assets/icon/app_icon.png", "rb") as bf:
+              b64_icon = base64.b64encode(bf.read()).decode("ascii")
+
+          cfg = {
+              "subdomain": sub, "store_domain": dom, "api_base_url": f"https://{dom}",
+              "app_name": name, "store_name": name, "app_slogan": slogan,
+              "bundle_id": bundle, "app_version": app_ver,
+              "primary_color": p_col, "secondary_color": s_col,
+              "app_icon_url": icon_url, "app_icon_base64": b64_icon,
+              "is_admin_app": False, "strict_tenant_lock": True,
+          }
+          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+          plist_p = "ios/Runner/Info.plist"
+          if os.path.isfile(plist_p):
+              with open(plist_p, "r", encoding="utf-8") as pf:
+                  ptxt = pf.read()
+              safe_ios = name.replace("&", "&amp;").replace("<", "").replace(">", "")
+              ptxt = re.sub(r'(<key>CFBundleDisplayName</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{safe_ios}\g<2>', ptxt)
+              ptxt = re.sub(r'(<key>CFBundleName</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{safe_ios}\g<2>', ptxt)
+              with open(plist_p, "w", encoding="utf-8") as pf:
+                  pf.write(ptxt)
+          pbx_p = "ios/Runner.xcodeproj/project.pbxproj"
+          if os.path.isfile(pbx_p):
+              with open(pbx_p, "r", encoding="utf-8") as xf:
+                  xtxt = xf.read()
+              xtxt = re.sub(r'PRODUCT_BUNDLE_IDENTIFIER = [^;]+;', f'PRODUCT_BUNDLE_IDENTIFIER = {bundle};', xtxt)
+              with open(pbx_p, "w", encoding="utf-8") as xf:
+                  xf.write(xtxt)
+          ios_icons = "ios/Runner/Assets.xcassets/AppIcon.appiconset"
+          if os.path.isdir(ios_icons):
+              for fn in os.listdir(ios_icons):
+                  if fn.endswith(".png"):
+                      fp = os.path.join(ios_icons, fn)
+                      try:
+                          orig_sz = Image.open(fp).size
+                          sq.convert("RGB").resize(orig_sz, Image.Resampling.LANCZOS).save(fp, format="PNG")
+                      except Exception:
+                          pass
+
+          for root, _, files in os.walk("lib"):
+              for fn in files:
+                  if fn.endswith(".dart"):
+                      fp = os.path.join(root, fn)
+                      with open(fp, "r", encoding="utf-8") as df:
+                          dtxt = df.read()
+                      fixed = dtxt.replace("activeThumbColor:", "activeColor:").replace("initialValue: value,", "value: value,")
+                      if fixed != dtxt:
+                          with open(fp, "w", encoding="utf-8") as df:
+                              df.write(fixed)
+          PY_BRAND
+
       - name: Prepare iOS & Get Packages
         run: |
           if [ ! -d "ios" ]; then
@@ -319,35 +516,76 @@ jobs:
           DOMAIN="${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
           SUB="${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
           NAME="${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}"
+          SLOGAN="${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}"
           COLOR="${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
+          SCOLOR="${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
+          BUNDLE="${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}"
+          ICON_URL="${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
           flutter build ios --release --no-codesign \
             --dart-define=STORE_DOMAIN="$DOMAIN" \
             --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" \
             --dart-define=TENANT_SUBDOMAIN="$SUB" \
             --dart-define=APP_NAME="$NAME" \
+            --dart-define=APP_SLOGAN="$SLOGAN" \
             --dart-define=PRIMARY_COLOR="$COLOR" \
+            --dart-define=SECONDARY_COLOR="$SCOLOR" \
+            --dart-define=BUNDLE_ID="$BUNDLE" \
+            --dart-define=APP_ICON_URL="$ICON_URL" \
             --dart-define=IS_MERCHANT_ADMIN=false
-          mkdir -p build/ios/ipa/Payload
+          mkdir -p build/ios/ipa/Payload release_assets
           cp -r build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          cd build/ios/ipa && zip -r -q app-release.ipa Payload
+          (cd build/ios/ipa && zip -r -q app-release.ipa Payload)
+          cp build/ios/ipa/app-release.ipa "release_assets/${SUB}-store-ios.ipa"
 
       - name: Upload iOS IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: storefront-ios-ipa
-          path: build/ios/ipa/app-release.ipa
+          path: release_assets/*.ipa
 
-      - name: Sync iOS IPA to Merchant Dashboard
-        if: success()
+  publish_release:
+    needs: [build_android_apk, build_windows_exe, build_apple_ios]
+    if: >-
+      always() && (
+        needs.build_android_apk.result == 'success' ||
+        needs.build_windows_exe.result == 'success' ||
+        needs.build_apple_ios.result == 'success'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download All Built Platform Assets
+        uses: actions/download-artifact@v4
+        with:
+          path: dist_assets
+          merge-multiple: true
+
+      - name: Prepare Release Metadata
+        id: meta
+        env:
+          SUB: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
+          DOM: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
+          NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
+          BUNDLE: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
         run: |
-          CALLBACK="${{ github.event.client_payload.callback_upload_url || '' }}"
-          SUB="${{ github.event.client_payload.subdomain || 'bestbdbazar' }}"
-          DOM="${{ github.event.client_payload.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
-          if [ -n "$CALLBACK" ] && [ -f "build/ios/ipa/app-release.ipa" ]; then
-            curl -k -L -sS -X POST "$CALLBACK" \
-              -H "X-Tenant-Subdomain: $SUB" \
-              -H "X-Tenant-Domain: $DOM" \
-              -F "store_ios_file=@build/ios/ipa/app-release.ipa;filename=${SUB}-store-ios.ipa" \
-              -F "subdomain=$SUB" \
-              -F "build_status=ready" || true
-          fi
+          CLEAN_SUB=$(echo "$SUB" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]//g')
+          echo "tag=${CLEAN_SUB}-latest" >> "$GITHUB_OUTPUT"
+          echo "title=${NAME} (${CLEAN_SUB}) — Customer Storefront App" >> "$GITHUB_OUTPUT"
+          echo "dom=${DOM}" >> "$GITHUB_OUTPUT"
+          echo "bundle=${BUNDLE}" >> "$GITHUB_OUTPUT"
+          ls -lh dist_assets/
+
+      - name: Publish / Replace Per-Merchant GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          make_latest: false
+          overwrite_files: true
+          body: |
+            ### Customer Storefront App — Ready for Super Admin Download
+            - **Merchant / App Name:** ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
+            - **Subdomain:** `${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}`
+            - **Store Domain:** `https://${{ steps.meta.outputs.dom }}`
+            - **Bundle ID:** `${{ steps.meta.outputs.bundle }}`
+          files: |
+            dist_assets/*
