@@ -72,7 +72,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Inject Merchant Branding, Logo & Config (Android)
+      - name: Inject Merchant Branding, Logo, Colors & Package ID (Android)
         env:
           STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
           SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
@@ -84,7 +84,7 @@ jobs:
           SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
           APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
         run: |
-          python3 -m pip install --break-system-packages --quiet Pillow || python3 -m pip install --user --quiet Pillow || true
+          python3 -m pip install --break-system-packages --quiet Pillow || python3 -m pip install --quiet Pillow || true
           python3 - << 'PY_BRAND'
           import os, re, json, base64, shutil, urllib.request
           from PIL import Image
@@ -112,7 +112,7 @@ jobs:
                       f.write(raw)
                   img = Image.open("assets/icon/app_icon.png").convert("RGBA")
               except Exception as e:
-                  print("Icon URL warning:", e)
+                  print("Icon URL download warning (fallback to color icon):", e)
 
           if img is None:
               hex_c = p_col.lstrip("#")
@@ -130,16 +130,25 @@ jobs:
               b64_icon = base64.b64encode(bf.read()).decode("ascii")
 
           cfg = {
-              "subdomain": sub, "store_domain": dom, "api_base_url": f"https://{dom}",
-              "app_name": name, "store_name": name, "app_slogan": slogan,
-              "bundle_id": bundle, "app_version": app_ver,
-              "primary_color": p_col, "secondary_color": s_col,
-              "app_icon_url": icon_url, "app_icon_base64": b64_icon,
-              "is_admin_app": False, "strict_tenant_lock": True,
+              "subdomain": sub,
+              "store_domain": dom,
+              "api_base_url": f"https://{dom}",
+              "app_name": name,
+              "store_name": name,
+              "app_slogan": slogan,
+              "bundle_id": bundle,
+              "app_version": app_ver,
+              "primary_color": p_col,
+              "secondary_color": s_col,
+              "app_icon_url": icon_url,
+              "app_icon_base64": b64_icon,
+              "is_admin_app": False,
+              "strict_tenant_lock": True,
           }
           with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
               json.dump(cfg, f, indent=2, ensure_ascii=False)
 
+          # --- Android branding ---
           res_root = "android/app/src/main/res"
           if os.path.isdir(res_root):
               for anydpi in ("mipmap-anydpi-v26", "mipmap-anydpi"):
@@ -147,9 +156,9 @@ jobs:
               for folder, px in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
                   d = os.path.join(res_root, folder)
                   os.makedirs(d, exist_ok=True)
-                  r_im = sq.resize((px, px), Image.Resampling.LANCZOS)
-                  r_im.save(os.path.join(d, "ic_launcher.png"), format="PNG")
-                  r_im.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
+                  resized = sq.resize((px, px), Image.Resampling.LANCZOS)
+                  resized.save(os.path.join(d, "ic_launcher.png"), format="PNG")
+                  resized.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
 
           manifest_p = "android/app/src/main/AndroidManifest.xml"
           if os.path.isfile(manifest_p):
@@ -168,16 +177,62 @@ jobs:
               with open(gradle_p, "w", encoding="utf-8") as gf:
                   gf.write(gtxt)
 
+          # --- Windows branding (icon + window title) ---
+          win_res = "windows/runner/resources"
+          os.makedirs(win_res, exist_ok=True)
+          sq.save(os.path.join(win_res, "app_icon.ico"), format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+          win_main = "windows/runner/main.cpp"
+          if os.path.isfile(win_main):
+              with open(win_main, "r", encoding="utf-8") as wf:
+                  wtxt = wf.read()
+              safe_win = name.replace('\\', '').replace('"', '')
+              wtxt = re.sub(r'window\.Create\(L"[^"]*"', f'window.Create(L"{safe_win}"', wtxt)
+              with open(win_main, "w", encoding="utf-8") as wf:
+                  wf.write(wtxt)
+
+          # --- iOS branding (DisplayName + Bundle ID + AppIcon) ---
+          plist_p = "ios/Runner/Info.plist"
+          if os.path.isfile(plist_p):
+              with open(plist_p, "r", encoding="utf-8") as pf:
+                  ptxt = pf.read()
+              safe_ios = name.replace("&", "&amp;").replace("<", "").replace(">", "")
+              ptxt = re.sub(r'(<key>CFBundleDisplayName</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{safe_ios}\g<2>', ptxt)
+              ptxt = re.sub(r'(<key>CFBundleName</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{safe_ios}\g<2>', ptxt)
+              with open(plist_p, "w", encoding="utf-8") as pf:
+                  pf.write(ptxt)
+          pbx_p = "ios/Runner.xcodeproj/project.pbxproj"
+          if os.path.isfile(pbx_p):
+              with open(pbx_p, "r", encoding="utf-8") as xf:
+                  xtxt = xf.read()
+              xtxt = re.sub(r'PRODUCT_BUNDLE_IDENTIFIER = [^;]+;', f'PRODUCT_BUNDLE_IDENTIFIER = {bundle};', xtxt)
+              with open(pbx_p, "w", encoding="utf-8") as xf:
+                  xf.write(xtxt)
+          ios_icons = "ios/Runner/Assets.xcassets/AppIcon.appiconset"
+          if os.path.isdir(ios_icons):
+              for fn in os.listdir(ios_icons):
+                  if fn.endswith(".png"):
+                      fp = os.path.join(ios_icons, fn)
+                      try:
+                          orig_sz = Image.open(fp).size
+                          sq.convert("RGB").resize(orig_sz, Image.Resampling.LANCZOS).save(fp, format="PNG")
+                      except Exception:
+                          pass
+
+          # --- Auto-heal Flutter 3.29.3 compatibility ---
           for root, _, files in os.walk("lib"):
               for fn in files:
-                  if fn.endswith(".dart"):
-                      fp = os.path.join(root, fn)
-                      with open(fp, "r", encoding="utf-8") as df:
-                          dtxt = df.read()
-                      fixed = dtxt.replace("activeThumbColor:", "activeColor:").replace("initialValue: value,", "value: value,")
-                      if fixed != dtxt:
-                          with open(fp, "w", encoding="utf-8") as df:
-                              df.write(fixed)
+                  if not fn.endswith(".dart"):
+                      continue
+                  fp = os.path.join(root, fn)
+                  with open(fp, "r", encoding="utf-8") as df:
+                      dtxt = df.read()
+                  orig = dtxt
+                  dtxt = dtxt.replace("activeThumbColor:", "activeColor:")
+                  dtxt = dtxt.replace("initialValue: value,", "value: value,")
+                  if dtxt != orig:
+                      with open(fp, "w", encoding="utf-8") as df:
+                          df.write(dtxt)
+          print(f"Injected branding for {name} ({sub} / {dom} / {bundle})")
           PY_BRAND
 
       - name: Prepare Android Platform & Dependencies
@@ -243,7 +298,7 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Inject Merchant Branding, Logo & Title (Windows)
+      - name: Inject Merchant Branding, Logo, Colors & Title (Windows)
         shell: bash
         env:
           STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
@@ -258,7 +313,7 @@ jobs:
         run: |
           python -m pip install --quiet Pillow || true
           python - << 'PY_BRAND'
-          import os, re, json, base64, urllib.request
+          import os, re, json, base64, shutil, urllib.request
           from PIL import Image
 
           sub = os.environ["SUBDOMAIN"].strip().lower() or "store"
@@ -284,7 +339,7 @@ jobs:
                       f.write(raw)
                   img = Image.open("assets/icon/app_icon.png").convert("RGBA")
               except Exception as e:
-                  print("Icon URL warning:", e)
+                  print("Icon URL download warning (fallback to color icon):", e)
 
           if img is None:
               hex_c = p_col.lstrip("#")
@@ -302,19 +357,57 @@ jobs:
               b64_icon = base64.b64encode(bf.read()).decode("ascii")
 
           cfg = {
-              "subdomain": sub, "store_domain": dom, "api_base_url": f"https://{dom}",
-              "app_name": name, "store_name": name, "app_slogan": slogan,
-              "bundle_id": bundle, "app_version": app_ver,
-              "primary_color": p_col, "secondary_color": s_col,
-              "app_icon_url": icon_url, "app_icon_base64": b64_icon,
-              "is_admin_app": False, "strict_tenant_lock": True,
+              "subdomain": sub,
+              "store_domain": dom,
+              "api_base_url": f"https://{dom}",
+              "app_name": name,
+              "store_name": name,
+              "app_slogan": slogan,
+              "bundle_id": bundle,
+              "app_version": app_ver,
+              "primary_color": p_col,
+              "secondary_color": s_col,
+              "app_icon_url": icon_url,
+              "app_icon_base64": b64_icon,
+              "is_admin_app": False,
+              "strict_tenant_lock": True,
           }
           with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
               json.dump(cfg, f, indent=2, ensure_ascii=False)
 
+          # --- Android branding ---
+          res_root = "android/app/src/main/res"
+          if os.path.isdir(res_root):
+              for anydpi in ("mipmap-anydpi-v26", "mipmap-anydpi"):
+                  shutil.rmtree(os.path.join(res_root, anydpi), ignore_errors=True)
+              for folder, px in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
+                  d = os.path.join(res_root, folder)
+                  os.makedirs(d, exist_ok=True)
+                  resized = sq.resize((px, px), Image.Resampling.LANCZOS)
+                  resized.save(os.path.join(d, "ic_launcher.png"), format="PNG")
+                  resized.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
+
+          manifest_p = "android/app/src/main/AndroidManifest.xml"
+          if os.path.isfile(manifest_p):
+              with open(manifest_p, "r", encoding="utf-8") as mf:
+                  mtxt = mf.read()
+              safe_lbl = name.replace("&", "&amp;").replace('"', "&quot;")
+              mtxt = re.sub(r'android:label="[^"]*"', f'android:label="{safe_lbl}"', mtxt, count=1)
+              with open(manifest_p, "w", encoding="utf-8") as mf:
+                  mf.write(mtxt)
+
+          gradle_p = "android/app/build.gradle.kts"
+          if os.path.isfile(gradle_p):
+              with open(gradle_p, "r", encoding="utf-8") as gf:
+                  gtxt = gf.read()
+              gtxt = gtxt.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
+              with open(gradle_p, "w", encoding="utf-8") as gf:
+                  gf.write(gtxt)
+
+          # --- Windows branding (icon + window title) ---
           win_res = "windows/runner/resources"
-          if os.path.isdir(win_res):
-              sq.save(os.path.join(win_res, "app_icon.ico"), format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+          os.makedirs(win_res, exist_ok=True)
+          sq.save(os.path.join(win_res, "app_icon.ico"), format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
           win_main = "windows/runner/main.cpp"
           if os.path.isfile(win_main):
               with open(win_main, "r", encoding="utf-8") as wf:
@@ -324,148 +417,7 @@ jobs:
               with open(win_main, "w", encoding="utf-8") as wf:
                   wf.write(wtxt)
 
-          for root, _, files in os.walk("lib"):
-              for fn in files:
-                  if fn.endswith(".dart"):
-                      fp = os.path.join(root, fn)
-                      with open(fp, "r", encoding="utf-8") as df:
-                          dtxt = df.read()
-                      fixed = dtxt.replace("activeThumbColor:", "activeColor:").replace("initialValue: value,", "value: value,")
-                      if fixed != dtxt:
-                          with open(fp, "w", encoding="utf-8") as df:
-                              df.write(fixed)
-          PY_BRAND
-
-      - name: Enable Windows & Get Packages
-        run: |
-          flutter config --enable-windows-desktop
-          if (!(Test-Path "windows")) {
-            flutter create . --platforms=windows --project-name xylo_customer_storefront
-          }
-          if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" -Force }
-          flutter pub get
-
-      - name: Build Windows Release & Package Portable ZIP
-        run: |
-          $DOMAIN = "${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
-          $SUB = "${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
-          $NAME = "${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}"
-          $SLOGAN = "${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}"
-          $COLOR = "${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
-          $SCOLOR = "${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
-          $BUNDLE = "${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}"
-          $ICON_URL = "${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
-          flutter build windows --release `
-            --dart-define=STORE_DOMAIN="$DOMAIN" `
-            --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" `
-            --dart-define=TENANT_SUBDOMAIN="$SUB" `
-            --dart-define=APP_NAME="$NAME" `
-            --dart-define=APP_SLOGAN="$SLOGAN" `
-            --dart-define=PRIMARY_COLOR="$COLOR" `
-            --dart-define=SECONDARY_COLOR="$SCOLOR" `
-            --dart-define=BUNDLE_ID="$BUNDLE" `
-            --dart-define=APP_ICON_URL="$ICON_URL" `
-            --dart-define=IS_MERCHANT_ADMIN=false
-          New-Item -ItemType Directory -Force -Path "release_assets" | Out-Null
-          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath "release_assets/$SUB-store-windows.zip" -Force
-
-      - name: Upload Windows Portable ZIP Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: storefront-windows-zip
-          path: release_assets/*.zip
-          retention-days: 1
-
-  build_apple_ios:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.client_payload.build_target == 'all' ||
-      github.event.client_payload.build_target == 'ios' ||
-      github.event.client_payload.build_target == '' ||
-      github.event.client_payload.build_target == 'store_app' ||
-      github.event.client_payload.build_target == 'admin_app' ||
-      github.event.client_payload.build_target == 'store_ios' ||
-      github.event.client_payload.build_target == 'admin_ios'
-    runs-on: macos-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Setup Flutter SDK (3.29.3 Stable)
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.3'
-          channel: 'stable'
-          cache: true
-
-      - name: Inject Merchant Branding, Logo & Bundle ID (iOS)
-        env:
-          STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
-          SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
-          APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
-          APP_SLOGAN: ${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}
-          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
-          APP_VERSION: ${{ github.event.client_payload.app_version || '1.0.0' }}
-          PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}
-          SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
-          APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
-        run: |
-          python3 -m pip install --break-system-packages --quiet Pillow || python3 -m pip install --break-system-packages --user --quiet Pillow || true
-          python3 - << 'PY_BRAND'
-          import os, re, json, base64, urllib.request
-          from PIL import Image
-
-          sub = os.environ["SUBDOMAIN"].strip().lower() or "store"
-          dom = os.environ["STORE_DOMAIN"].strip().lower() or f"{sub}.shop.xylotechsolution.com"
-          name = os.environ["APP_NAME"].strip() or sub.capitalize()
-          slogan = os.environ["APP_SLOGAN"].strip() or "Authentic Online Shopping"
-          bundle = os.environ["BUNDLE_ID"].strip() or f"com.xylosaas.{sub}.store"
-          p_col = os.environ["PRIMARY_COLOR"].strip() or "#059669"
-          s_col = os.environ["SECONDARY_COLOR"].strip() or "#047857"
-          icon_url = os.environ["APP_ICON_URL"].strip()
-          app_ver = os.environ.get("APP_VERSION", "1.0.0").strip() or "1.0.0"
-
-          os.makedirs("assets/icon", exist_ok=True)
-          os.makedirs("assets/images", exist_ok=True)
-
-          img = None
-          if icon_url:
-              try:
-                  req = urllib.request.Request(icon_url, headers={"User-Agent": "Mozilla/5.0"})
-                  with urllib.request.urlopen(req, timeout=25) as r:
-                      raw = r.read()
-                  with open("assets/icon/app_icon.png", "wb") as f:
-                      f.write(raw)
-                  img = Image.open("assets/icon/app_icon.png").convert("RGBA")
-              except Exception as e:
-                  print("Icon URL warning:", e)
-
-          if img is None:
-              hex_c = p_col.lstrip("#")
-              rgb = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4)) if len(hex_c) == 6 else (5, 150, 105)
-              img = Image.new("RGBA", (512, 512), (*rgb, 255))
-
-          sq = Image.new("RGBA", (512, 512), (255, 255, 255, 255))
-          cp = img.copy()
-          cp.thumbnail((512, 512), Image.Resampling.LANCZOS)
-          sq.paste(cp, ((512 - cp.width) // 2, (512 - cp.height) // 2), cp)
-          sq.save("assets/icon/app_icon.png", format="PNG")
-          sq.save("assets/images/app_icon.png", format="PNG")
-
-          with open("assets/icon/app_icon.png", "rb") as bf:
-              b64_icon = base64.b64encode(bf.read()).decode("ascii")
-
-          cfg = {
-              "subdomain": sub, "store_domain": dom, "api_base_url": f"https://{dom}",
-              "app_name": name, "store_name": name, "app_slogan": slogan,
-              "bundle_id": bundle, "app_version": app_ver,
-              "primary_color": p_col, "secondary_color": s_col,
-              "app_icon_url": icon_url, "app_icon_base64": b64_icon,
-              "is_admin_app": False, "strict_tenant_lock": True,
-          }
-          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
-              json.dump(cfg, f, indent=2, ensure_ascii=False)
-
+          # --- iOS branding (DisplayName + Bundle ID + AppIcon) ---
           plist_p = "ios/Runner/Info.plist"
           if os.path.isfile(plist_p):
               with open(plist_p, "r", encoding="utf-8") as pf:
@@ -493,16 +445,318 @@ jobs:
                       except Exception:
                           pass
 
+          # --- Auto-heal Flutter 3.29.3 compatibility ---
           for root, _, files in os.walk("lib"):
               for fn in files:
-                  if fn.endswith(".dart"):
-                      fp = os.path.join(root, fn)
-                      with open(fp, "r", encoding="utf-8") as df:
-                          dtxt = df.read()
-                      fixed = dtxt.replace("activeThumbColor:", "activeColor:").replace("initialValue: value,", "value: value,")
-                      if fixed != dtxt:
-                          with open(fp, "w", encoding="utf-8") as df:
-                              df.write(fixed)
+                  if not fn.endswith(".dart"):
+                      continue
+                  fp = os.path.join(root, fn)
+                  with open(fp, "r", encoding="utf-8") as df:
+                      dtxt = df.read()
+                  orig = dtxt
+                  dtxt = dtxt.replace("activeThumbColor:", "activeColor:")
+                  dtxt = dtxt.replace("initialValue: value,", "value: value,")
+                  if dtxt != orig:
+                      with open(fp, "w", encoding="utf-8") as df:
+                          df.write(dtxt)
+          print(f"Injected branding for {name} ({sub} / {dom} / {bundle})")
+          PY_BRAND
+
+      - name: Enable Windows & Get Packages
+        run: |
+          flutter config --enable-windows-desktop
+          if (!(Test-Path "windows")) {
+            flutter create . --platforms=windows --project-name xylo_customer_storefront
+          }
+          if (Test-Path "pubspec.lock") { Remove-Item "pubspec.lock" -Force }
+          flutter pub get
+
+      - name: Build Windows Release & Compile Single Setup.exe (Inno Setup)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $DOMAIN = "${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}"
+          $SUB = "${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}"
+          $NAME = "${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}"
+          $SLOGAN = "${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}"
+          $COLOR = "${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}"
+          $SCOLOR = "${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}"
+          $BUNDLE = "${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}"
+          $APP_VER = "${{ github.event.client_payload.app_version || '1.0.0' }}"
+          $ICON_URL = "${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}"
+
+          flutter build windows --release `
+            --dart-define=STORE_DOMAIN="$DOMAIN" `
+            --dart-define=DEFAULT_TENANT_DOMAIN="$DOMAIN" `
+            --dart-define=TENANT_SUBDOMAIN="$SUB" `
+            --dart-define=APP_NAME="$NAME" `
+            --dart-define=APP_SLOGAN="$SLOGAN" `
+            --dart-define=PRIMARY_COLOR="$COLOR" `
+            --dart-define=SECONDARY_COLOR="$SCOLOR" `
+            --dart-define=BUNDLE_ID="$BUNDLE" `
+            --dart-define=APP_ICON_URL="$ICON_URL" `
+            --dart-define=IS_MERCHANT_ADMIN=false
+
+          $RELEASE_DIR = (Resolve-Path "build\windows\x64\runner\Release").Path
+          $MAIN_EXE = (Get-ChildItem -Path $RELEASE_DIR -Filter "*.exe" | Select-Object -First 1).Name
+          if (-not $MAIN_EXE) {
+            throw "No .exe binary found inside $RELEASE_DIR"
+          }
+
+          $ISCC = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $ISCC)) {
+            choco install innosetup -y --no-progress
+          }
+
+          New-Item -ItemType Directory -Force -Path "release_assets" | Out-Null
+          $OUT_DIR = (Resolve-Path "release_assets").Path
+          $SAFE_SUB = ($SUB.ToLower() -replace '[^a-z0-9_-]', '')
+          if (-not $SAFE_SUB) { $SAFE_SUB = "merchant" }
+          $SAFE_NAME = ($NAME -replace '["\r\n]', '').Trim()
+          if (-not $SAFE_NAME) { $SAFE_NAME = "Merchant App" }
+          $DISPLAY_NAME = "$SAFE_NAME Store"
+          $SAFE_DIR = ($DISPLAY_NAME -replace '[\\/:*?"<>|]', '').Trim()
+          $OUT_BASE = "$SAFE_SUB-store-setup"
+
+          $ICON_LINE = ""
+          if (Test-Path "windows\runner\resources\app_icon.ico") {
+            $ICO_PATH = (Resolve-Path "windows\runner\resources\app_icon.ico").Path
+            $ICON_LINE = "SetupIconFile=$ICO_PATH"
+          }
+
+          $ISS_LINES = @(
+            "[Setup]",
+            "AppId=com.xylosaas.$SAFE_SUB.store",
+            "AppName=$DISPLAY_NAME",
+            "AppVersion=$APP_VER",
+            "AppPublisher=$SAFE_NAME",
+            "DefaultDirName={autopf}\$SAFE_DIR",
+            "DefaultGroupName=$DISPLAY_NAME",
+            "AllowNoIcons=yes",
+            "PrivilegesRequired=lowest",
+            "PrivilegesRequiredOverridesAllowed=dialog",
+            "OutputDir=$OUT_DIR",
+            "OutputBaseFilename=$OUT_BASE",
+            $ICON_LINE,
+            "Compression=lzma2/max",
+            "SolidCompression=yes",
+            "WizardStyle=modern",
+            "ArchitecturesAllowed=x64compatible",
+            "ArchitecturesInstallIn64BitMode=x64compatible",
+            "",
+            "[Languages]",
+            'Name: "english"; MessagesFile: "compiler:Default.isl"',
+            "",
+            "[Tasks]",
+            'Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"',
+            "",
+            "[Files]",
+            "Source: `"$RELEASE_DIR\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs createallsubdirs",
+            "",
+            "[Icons]",
+            "Name: `"{autoprograms}\$DISPLAY_NAME`"; Filename: `"{app}\$MAIN_EXE`"",
+            "Name: `"{autodesktop}\$DISPLAY_NAME`"; Filename: `"{app}\$MAIN_EXE`"; Tasks: desktopicon",
+            "",
+            "[Run]",
+            "Filename: `"{app}\$MAIN_EXE`"; Description: `"{cm:LaunchProgram,$DISPLAY_NAME}`"; Flags: nowait postinstall skipifsilent"
+          )
+          $ISS_LINES | Set-Content -Path "installer.iss" -Encoding UTF8
+          & $ISCC "installer.iss"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup compiler failed with exit code $LASTEXITCODE"
+          }
+          Get-ChildItem -Path "release_assets"
+
+      - name: Upload Windows Setup EXE Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storefront-windows-setup-exe
+          path: release_assets/*.exe
+          retention-days: 1
+
+  build_apple_ios:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.client_payload.build_target == 'all' ||
+      github.event.client_payload.build_target == 'ios' ||
+      github.event.client_payload.build_target == '' ||
+      github.event.client_payload.build_target == 'store_app' ||
+      github.event.client_payload.build_target == 'admin_app' ||
+      github.event.client_payload.build_target == 'store_ios' ||
+      github.event.client_payload.build_target == 'admin_ios'
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter SDK (3.29.3 Stable)
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+          cache: true
+
+      - name: Inject Merchant Branding, Logo, Colors & Bundle ID (iOS)
+        env:
+          STORE_DOMAIN: ${{ github.event.client_payload.store_domain || github.event.inputs.store_domain || 'bestbdbazar.shop.xylotechsolution.com' }}
+          SUBDOMAIN: ${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}
+          APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'BestBdBazar' }}
+          APP_SLOGAN: ${{ github.event.client_payload.app_slogan || 'Authentic Online Shopping' }}
+          BUNDLE_ID: ${{ github.event.client_payload.bundle_id || github.event.inputs.bundle_id || 'com.xylosaas.bestbdbazar.store' }}
+          APP_VERSION: ${{ github.event.client_payload.app_version || '1.0.0' }}
+          PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#059669' }}
+          SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
+          APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+        run: |
+          python3 -m pip install --break-system-packages --quiet Pillow || python3 -m pip install --user --quiet Pillow || true
+          python3 - << 'PY_BRAND'
+          import os, re, json, base64, shutil, urllib.request
+          from PIL import Image
+
+          sub = os.environ["SUBDOMAIN"].strip().lower() or "store"
+          dom = os.environ["STORE_DOMAIN"].strip().lower() or f"{sub}.shop.xylotechsolution.com"
+          name = os.environ["APP_NAME"].strip() or sub.capitalize()
+          slogan = os.environ["APP_SLOGAN"].strip() or "Authentic Online Shopping"
+          bundle = os.environ["BUNDLE_ID"].strip() or f"com.xylosaas.{sub}.store"
+          p_col = os.environ["PRIMARY_COLOR"].strip() or "#059669"
+          s_col = os.environ["SECONDARY_COLOR"].strip() or "#047857"
+          icon_url = os.environ["APP_ICON_URL"].strip()
+          app_ver = os.environ.get("APP_VERSION", "1.0.0").strip() or "1.0.0"
+
+          os.makedirs("assets/icon", exist_ok=True)
+          os.makedirs("assets/images", exist_ok=True)
+
+          img = None
+          if icon_url:
+              try:
+                  req = urllib.request.Request(icon_url, headers={"User-Agent": "Mozilla/5.0"})
+                  with urllib.request.urlopen(req, timeout=25) as r:
+                      raw = r.read()
+                  with open("assets/icon/app_icon.png", "wb") as f:
+                      f.write(raw)
+                  img = Image.open("assets/icon/app_icon.png").convert("RGBA")
+              except Exception as e:
+                  print("Icon URL download warning (fallback to color icon):", e)
+
+          if img is None:
+              hex_c = p_col.lstrip("#")
+              rgb = tuple(int(hex_c[i:i+2], 16) for i in (0, 2, 4)) if len(hex_c) == 6 else (5, 150, 105)
+              img = Image.new("RGBA", (512, 512), (*rgb, 255))
+
+          sq = Image.new("RGBA", (512, 512), (255, 255, 255, 255))
+          cp = img.copy()
+          cp.thumbnail((512, 512), Image.Resampling.LANCZOS)
+          sq.paste(cp, ((512 - cp.width) // 2, (512 - cp.height) // 2), cp)
+          sq.save("assets/icon/app_icon.png", format="PNG")
+          sq.save("assets/images/app_icon.png", format="PNG")
+
+          with open("assets/icon/app_icon.png", "rb") as bf:
+              b64_icon = base64.b64encode(bf.read()).decode("ascii")
+
+          cfg = {
+              "subdomain": sub,
+              "store_domain": dom,
+              "api_base_url": f"https://{dom}",
+              "app_name": name,
+              "store_name": name,
+              "app_slogan": slogan,
+              "bundle_id": bundle,
+              "app_version": app_ver,
+              "primary_color": p_col,
+              "secondary_color": s_col,
+              "app_icon_url": icon_url,
+              "app_icon_base64": b64_icon,
+              "is_admin_app": False,
+              "strict_tenant_lock": True,
+          }
+          with open("assets/tenant_config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+          # --- Android branding ---
+          res_root = "android/app/src/main/res"
+          if os.path.isdir(res_root):
+              for anydpi in ("mipmap-anydpi-v26", "mipmap-anydpi"):
+                  shutil.rmtree(os.path.join(res_root, anydpi), ignore_errors=True)
+              for folder, px in (("mipmap-mdpi", 48), ("mipmap-hdpi", 72), ("mipmap-xhdpi", 96), ("mipmap-xxhdpi", 144), ("mipmap-xxxhdpi", 192)):
+                  d = os.path.join(res_root, folder)
+                  os.makedirs(d, exist_ok=True)
+                  resized = sq.resize((px, px), Image.Resampling.LANCZOS)
+                  resized.save(os.path.join(d, "ic_launcher.png"), format="PNG")
+                  resized.save(os.path.join(d, "ic_launcher_round.png"), format="PNG")
+
+          manifest_p = "android/app/src/main/AndroidManifest.xml"
+          if os.path.isfile(manifest_p):
+              with open(manifest_p, "r", encoding="utf-8") as mf:
+                  mtxt = mf.read()
+              safe_lbl = name.replace("&", "&amp;").replace('"', "&quot;")
+              mtxt = re.sub(r'android:label="[^"]*"', f'android:label="{safe_lbl}"', mtxt, count=1)
+              with open(manifest_p, "w", encoding="utf-8") as mf:
+                  mf.write(mtxt)
+
+          gradle_p = "android/app/build.gradle.kts"
+          if os.path.isfile(gradle_p):
+              with open(gradle_p, "r", encoding="utf-8") as gf:
+                  gtxt = gf.read()
+              gtxt = gtxt.replace("ndkVersion = flutter.ndkVersion", 'ndkVersion = "27.0.12077973"')
+              with open(gradle_p, "w", encoding="utf-8") as gf:
+                  gf.write(gtxt)
+
+          # --- Windows branding (icon + window title) ---
+          win_res = "windows/runner/resources"
+          os.makedirs(win_res, exist_ok=True)
+          sq.save(os.path.join(win_res, "app_icon.ico"), format="ICO", sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+          win_main = "windows/runner/main.cpp"
+          if os.path.isfile(win_main):
+              with open(win_main, "r", encoding="utf-8") as wf:
+                  wtxt = wf.read()
+              safe_win = name.replace('\\', '').replace('"', '')
+              wtxt = re.sub(r'window\.Create\(L"[^"]*"', f'window.Create(L"{safe_win}"', wtxt)
+              with open(win_main, "w", encoding="utf-8") as wf:
+                  wf.write(wtxt)
+
+          # --- iOS branding (DisplayName + Bundle ID + AppIcon) ---
+          plist_p = "ios/Runner/Info.plist"
+          if os.path.isfile(plist_p):
+              with open(plist_p, "r", encoding="utf-8") as pf:
+                  ptxt = pf.read()
+              safe_ios = name.replace("&", "&amp;").replace("<", "").replace(">", "")
+              ptxt = re.sub(r'(<key>CFBundleDisplayName</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{safe_ios}\g<2>', ptxt)
+              ptxt = re.sub(r'(<key>CFBundleName</key>\s*<string>)[^<]*(</string>)', rf'\g<1>{safe_ios}\g<2>', ptxt)
+              with open(plist_p, "w", encoding="utf-8") as pf:
+                  pf.write(ptxt)
+          pbx_p = "ios/Runner.xcodeproj/project.pbxproj"
+          if os.path.isfile(pbx_p):
+              with open(pbx_p, "r", encoding="utf-8") as xf:
+                  xtxt = xf.read()
+              xtxt = re.sub(r'PRODUCT_BUNDLE_IDENTIFIER = [^;]+;', f'PRODUCT_BUNDLE_IDENTIFIER = {bundle};', xtxt)
+              with open(pbx_p, "w", encoding="utf-8") as xf:
+                  xf.write(xtxt)
+          ios_icons = "ios/Runner/Assets.xcassets/AppIcon.appiconset"
+          if os.path.isdir(ios_icons):
+              for fn in os.listdir(ios_icons):
+                  if fn.endswith(".png"):
+                      fp = os.path.join(ios_icons, fn)
+                      try:
+                          orig_sz = Image.open(fp).size
+                          sq.convert("RGB").resize(orig_sz, Image.Resampling.LANCZOS).save(fp, format="PNG")
+                      except Exception:
+                          pass
+
+          # --- Auto-heal Flutter 3.29.3 compatibility ---
+          for root, _, files in os.walk("lib"):
+              for fn in files:
+                  if not fn.endswith(".dart"):
+                      continue
+                  fp = os.path.join(root, fn)
+                  with open(fp, "r", encoding="utf-8") as df:
+                      dtxt = df.read()
+                  orig = dtxt
+                  dtxt = dtxt.replace("activeThumbColor:", "activeColor:")
+                  dtxt = dtxt.replace("initialValue: value,", "value: value,")
+                  if dtxt != orig:
+                      with open(fp, "w", encoding="utf-8") as df:
+                          df.write(dtxt)
+          print(f"Injected branding for {name} ({sub} / {dom} / {bundle})")
           PY_BRAND
 
       - name: Prepare iOS & Get Packages
@@ -590,5 +844,6 @@ jobs:
             - **Subdomain:** `${{ github.event.client_payload.subdomain || github.event.inputs.subdomain || 'bestbdbazar' }}`
             - **Store Domain:** `https://${{ steps.meta.outputs.dom }}`
             - **Bundle ID:** `${{ steps.meta.outputs.bundle }}`
+            - **Note:** Rebuilding this merchant automatically replaces the files below in this same Release (no duplicates).
           files: |
             dist_assets/*
