@@ -84,7 +84,7 @@ jobs:
           SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
           APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
         run: |
-          python3 -m pip install --quiet Pillow || true
+          python3 -m pip install --break-system-packages --quiet Pillow || python3 -m pip install --user --quiet Pillow || true
           python3 - << 'PY_BRAND'
           import os, re, json, base64, shutil, urllib.request
           from PIL import Image
@@ -219,6 +219,7 @@ jobs:
         with:
           name: storefront-android-apk
           path: release_assets/*.apk
+          retention-days: 1
 
   build_windows_exe:
     if: >-
@@ -230,7 +231,7 @@ jobs:
       github.event.client_payload.build_target == 'admin_app' ||
       github.event.client_payload.build_target == 'store_windows' ||
       github.event.client_payload.build_target == 'admin_windows'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -373,6 +374,7 @@ jobs:
         with:
           name: storefront-windows-zip
           path: release_assets/*.zip
+          retention-days: 1
 
   build_apple_ios:
     if: >-
@@ -408,7 +410,7 @@ jobs:
           SECONDARY_COLOR: ${{ github.event.client_payload.secondary_color || github.event.inputs.secondary_color || '#047857' }}
           APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
         run: |
-          python3 -m pip install --quiet Pillow || true
+          python3 -m pip install --break-system-packages --quiet Pillow || python3 -m pip install --break-system-packages --user --quiet Pillow || true
           python3 - << 'PY_BRAND'
           import os, re, json, base64, urllib.request
           from PIL import Image
@@ -542,6 +544,7 @@ jobs:
         with:
           name: storefront-ios-ipa
           path: release_assets/*.ipa
+          retention-days: 1
 
   publish_release:
     needs: [build_android_apk, build_windows_exe, build_apple_ios]
